@@ -1,0 +1,1 @@
+{"root":["./src/app.test.tsx","./src/app.tsx","./src/main.tsx","./src/components/comparisonresults.tsx","./src/components/planform.tsx","./src/data/defaultplans.ts","./src/lib/insurance.test.ts","./src/lib/insurance.ts","./src/lib/validation.ts","./src/test/setup.ts","./src/types/insurance.ts"],"version":"5.9.3"}

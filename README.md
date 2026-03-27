@@ -1,2 +1,18 @@
-# InsuranceComparison
- A web-based tool that allows users to input health insurance plan details and run simulated financial scenarios—both through manual inputs and natural language AI—to determine the most cost-effective plan for their needs.
+# Insurance Comparison
+
+A React + TypeScript + Vite + Tailwind CSS starter app for comparing two insurance
+plans based on annual medical spend.
+
+## Run locally
+
+```bash
+npm install
+npm run dev
+```
+
+## Current scope
+
+- Two-plan comparison form
+- Pure annual cost calculation engine
+- Cheaper-plan highlight
+- No external APIs
