@@ -52,3 +52,13 @@ export function chooseCheaperPlan(
 ): 'left' | 'right' {
   return leftResult.totalAnnualCost <= rightResult.totalAnnualCost ? 'left' : 'right'
 }
+
+export function getCheapestPlanIndex(results: AnnualCostBreakdown[]): number {
+  return results.reduce(
+    (lowestIndex, currentResult, currentIndex, allResults) =>
+      currentResult.totalAnnualCost < allResults[lowestIndex].totalAnnualCost
+        ? currentIndex
+        : lowestIndex,
+    0,
+  )
+}

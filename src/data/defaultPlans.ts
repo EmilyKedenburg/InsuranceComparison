@@ -17,4 +17,20 @@ export const defaultPlans: InsurancePlan[] = [
     outOfPocketMax: 6500,
     employerContribution: 1800,
   },
+  {
+    name: 'EPO Plan',
+    monthlyPremium: 255,
+    deductible: 2200,
+    coinsurance: 15,
+    outOfPocketMax: 5800,
+    employerContribution: 900,
+  },
+  {
+    name: 'Copay Plan',
+    monthlyPremium: 410,
+    deductible: 900,
+    coinsurance: 25,
+    outOfPocketMax: 4500,
+    employerContribution: 700,
+  },
 ]

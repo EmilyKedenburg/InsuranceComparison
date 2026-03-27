@@ -1,11 +1,10 @@
 import type { AnnualCostBreakdown, InsurancePlan } from '../types/insurance'
-import { chooseCheaperPlan } from '../lib/insurance'
+import { getCheapestPlanIndex } from '../lib/insurance'
 
 interface ComparisonResultsProps {
-  leftPlan: InsurancePlan
-  rightPlan: InsurancePlan
-  leftResult: AnnualCostBreakdown
-  rightResult: AnnualCostBreakdown
+  plans: InsurancePlan[]
+  results: AnnualCostBreakdown[]
+  viewMode: 'grid' | 'scroll' | 'condensed'
 }
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
@@ -20,11 +19,13 @@ function SummaryCard({
   plan,
   result,
   highlighted,
+  compact,
 }: {
   label: string
   plan: InsurancePlan
   result: AnnualCostBreakdown
   highlighted: boolean
+  compact: boolean
 }) {
   return (
     <article
@@ -35,8 +36,10 @@ function SummaryCard({
       }`}
     >
       <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{label}</p>
-      <h3 className="mt-2 text-2xl font-semibold text-slate-900">{plan.name}</h3>
-      <p className="mt-4 text-4xl font-bold text-slate-950">
+      <h3 className={`mt-2 font-semibold text-slate-900 ${compact ? 'text-xl' : 'text-2xl'}`}>
+        {plan.name}
+      </h3>
+      <p className={`mt-4 font-bold text-slate-950 ${compact ? 'text-3xl' : 'text-4xl'}`}>
         {currencyFormatter.format(result.totalAnnualCost)}
       </p>
       <div className="mt-5 space-y-2 text-sm text-slate-600">
@@ -51,13 +54,28 @@ function SummaryCard({
 }
 
 export function ComparisonResults({
-  leftPlan,
-  rightPlan,
-  leftResult,
-  rightResult,
+  plans,
+  results,
+  viewMode,
 }: ComparisonResultsProps) {
-  const cheaperPlan = chooseCheaperPlan(leftResult, rightResult)
-  const savings = Math.abs(leftResult.totalAnnualCost - rightResult.totalAnnualCost)
+  const cheapestPlanIndex = getCheapestPlanIndex(results)
+  const sortedTotals = [...results]
+    .map((result, index) => ({ result, index }))
+    .sort((left, right) => left.result.totalAnnualCost - right.result.totalAnnualCost)
+  const savings =
+    sortedTotals.length > 1
+      ? sortedTotals[1].result.totalAnnualCost - sortedTotals[0].result.totalAnnualCost
+      : 0
+
+  const compact = viewMode === 'condensed'
+  const containerClass =
+    viewMode === 'grid'
+      ? 'grid gap-4 md:grid-cols-2'
+      : viewMode === 'condensed'
+        ? 'grid grid-cols-2 gap-4 xl:grid-cols-4'
+        : 'grid min-w-max grid-flow-col gap-4'
+  const containerStyle =
+    viewMode === 'scroll' ? { gridAutoColumns: 'minmax(18rem, 1fr)' } : undefined
 
   return (
     <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
@@ -69,24 +87,24 @@ export function ComparisonResults({
           Based on your annual medical spend
         </h2>
         <p className="text-slate-600">
-          {cheaperPlan === 'left' ? leftPlan.name : rightPlan.name} is currently cheaper
-          by {currencyFormatter.format(savings)}.
+          {plans[cheapestPlanIndex].name} is currently the cheapest plan
+          {sortedTotals.length > 1 ? ` by ${currencyFormatter.format(savings)}` : ''}.
         </p>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <SummaryCard
-          highlighted={cheaperPlan === 'left'}
-          label="Plan 1"
-          plan={leftPlan}
-          result={leftResult}
-        />
-        <SummaryCard
-          highlighted={cheaperPlan === 'right'}
-          label="Plan 2"
-          plan={rightPlan}
-          result={rightResult}
-        />
+      <div className={`mt-6 ${viewMode === 'scroll' ? 'overflow-x-auto pb-2' : ''}`}>
+        <div className={containerClass} style={containerStyle}>
+          {plans.map((plan, index) => (
+            <SummaryCard
+              key={`${plan.name}-${index}`}
+              compact={compact}
+              highlighted={index === cheapestPlanIndex}
+              label={`Plan ${index + 1}`}
+              plan={plan}
+              result={results[index]}
+            />
+          ))}
+        </div>
       </div>
     </section>
   )

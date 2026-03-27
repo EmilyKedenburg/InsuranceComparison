@@ -44,7 +44,7 @@ describe('App integration', () => {
     expect(within(ppoSummaryCard).getByText('$2,840.00')).toBeInTheDocument()
     expect(within(hdhpSummaryCard).getByText('$420.00')).toBeInTheDocument()
     expect(
-      screen.getByText(/HDHP Plan is currently cheaper by \$2,420\.00\./)
+      screen.getByText(/HDHP Plan is currently the cheapest plan by \$2,420\.00\./)
     ).toBeInTheDocument()
   })
 
@@ -66,7 +66,7 @@ describe('App integration', () => {
     expect(within(ppoFormSection).getByText('Lower Total Cost')).toBeInTheDocument()
     expect(within(hdhpFormSection).queryByText('Lower Total Cost')).not.toBeInTheDocument()
     expect(
-      screen.getByText(/PPO Plan is currently cheaper by \$1,400\.00\./)
+      screen.getByText(/PPO Plan is currently the cheapest plan by \$1,400\.00\./)
     ).toBeInTheDocument()
   })
 
@@ -81,6 +81,58 @@ describe('App integration', () => {
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     expect(within(ppoSummaryCard).getByText('$2,681.40')).toBeInTheDocument()
     expect(within(ppoSummaryCard).getByText('Annual premium: $1,481.40')).toBeInTheDocument()
+  })
+
+  it('allows switching between plan view modes', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const planLayout = screen.getByTestId('plan-layout')
+    const gridButton = screen.getByRole('button', { name: '2x2' })
+    const scrollButton = screen.getByRole('button', { name: 'Scroll' })
+    const condensedButton = screen.getByRole('button', { name: 'Condensed' })
+
+    expect(scrollButton).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(gridButton)
+    expect(gridButton).toHaveAttribute('aria-pressed', 'true')
+    expect(planLayout.className).not.toContain('overflow-x-auto')
+
+    await user.click(condensedButton)
+    expect(condensedButton).toHaveAttribute('aria-pressed', 'true')
+    expect(planLayout.className).not.toContain('overflow-x-auto')
+
+    await user.click(scrollButton)
+    expect(scrollButton).toHaveAttribute('aria-pressed', 'true')
+    expect(planLayout.className).toContain('overflow-x-auto')
+  })
+
+  it('allows adding up to four plans and disables adding beyond that', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const addPlanButton = screen.getByRole('button', { name: 'Add Plan' })
+    await user.click(addPlanButton)
+    await user.click(addPlanButton)
+
+    expect(screen.getAllByRole('heading', { name: 'EPO Plan' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('heading', { name: 'Copay Plan' }).length).toBeGreaterThan(0)
+    expect(addPlanButton).toBeDisabled()
+  })
+
+  it('allows removing an added plan while keeping the original two plans', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Add Plan' }))
+    expect(screen.getAllByRole('heading', { name: 'EPO Plan' }).length).toBeGreaterThan(0)
+
+    const epoPlanFormSection = getPlanFormSection('EPO Plan')
+    await user.click(within(epoPlanFormSection).getByRole('button', { name: 'Remove Plan' }))
+
+    expect(screen.queryAllByRole('heading', { name: 'EPO Plan' })).toHaveLength(0)
+    expect(screen.getAllByRole('heading', { name: 'PPO Plan' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('heading', { name: 'HDHP Plan' }).length).toBeGreaterThan(0)
   })
 
   it('shows validation messages for invalid plan and spend inputs', async () => {

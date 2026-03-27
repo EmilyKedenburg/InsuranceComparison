@@ -2,15 +2,19 @@ import { useState } from 'react'
 import { ComparisonResults } from './components/ComparisonResults'
 import { PlanForm } from './components/PlanForm'
 import { defaultPlans } from './data/defaultPlans'
-import { calculateAnnualCost, chooseCheaperPlan } from './lib/insurance'
+import { calculateAnnualCost, getCheapestPlanIndex } from './lib/insurance'
 import { validateAnnualMedicalSpend, validatePlan } from './lib/validation'
 import type { InsurancePlan } from './types/insurance'
 
-const initialPlans = structuredClone(defaultPlans)
+const minimumPlanCount = 2
+const maximumPlanCount = 4
+const initialPlans = structuredClone(defaultPlans.slice(0, minimumPlanCount))
+type PlanViewMode = 'grid' | 'scroll' | 'condensed'
 
 export default function App() {
   const [plans, setPlans] = useState<InsurancePlan[]>(initialPlans)
   const [annualMedicalSpend, setAnnualMedicalSpend] = useState(5000)
+  const [planViewMode, setPlanViewMode] = useState<PlanViewMode>('scroll')
 
   const updatePlan = (
     index: number,
@@ -24,18 +28,40 @@ export default function App() {
     )
   }
 
-  const leftResult = calculateAnnualCost(plans[0], annualMedicalSpend)
-  const rightResult = calculateAnnualCost(plans[1], annualMedicalSpend)
-  const cheaperPlan = chooseCheaperPlan(leftResult, rightResult)
-  const leftIsCheaper = cheaperPlan === 'left'
-  const rightIsCheaper = cheaperPlan === 'right'
-  const leftValidation = validatePlan(plans[0])
-  const rightValidation = validatePlan(plans[1])
+  const addPlan = () => {
+    setPlans((currentPlans) => {
+      if (currentPlans.length >= maximumPlanCount) {
+        return currentPlans
+      }
+
+      return [...currentPlans, structuredClone(defaultPlans[currentPlans.length])]
+    })
+  }
+
+  const removePlan = (index: number) => {
+    setPlans((currentPlans) =>
+      currentPlans.length <= minimumPlanCount
+        ? currentPlans
+        : currentPlans.filter((_, planIndex) => planIndex !== index),
+    )
+  }
+
+  const results = plans.map((plan) => calculateAnnualCost(plan, annualMedicalSpend))
+  const cheapestPlanIndex = getCheapestPlanIndex(results)
+  const validations = plans.map((plan) => validatePlan(plan))
   const spendValidation = validateAnnualMedicalSpend(annualMedicalSpend)
   const hasValidationIssues =
-    leftValidation.errors.length > 0 ||
-    rightValidation.errors.length > 0 ||
+    validations.some((validation) => validation.errors.length > 0) ||
     spendValidation.errors.length > 0
+  const compactView = planViewMode === 'condensed'
+  const planLayoutClass =
+    planViewMode === 'grid'
+      ? 'grid gap-6 md:grid-cols-2'
+      : planViewMode === 'condensed'
+        ? 'grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-4'
+        : 'grid min-w-max grid-flow-col gap-6'
+  const planLayoutStyle =
+    planViewMode === 'scroll' ? { gridAutoColumns: 'minmax(22rem, 1fr)' } : undefined
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#e0f2fe,_#f8fafc_50%,_#e2e8f0)] px-4 py-10 text-slate-900">
@@ -90,31 +116,75 @@ export default function App() {
           ) : null}
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-2">
-          <PlanForm
-            fieldErrors={leftValidation.fieldErrors}
-            isCheaper={leftIsCheaper}
-            plan={plans[0]}
-            title="Plan 1"
-            warnings={leftValidation.warnings}
-            onChange={(field, value) => updatePlan(0, field, value)}
-          />
-          <PlanForm
-            fieldErrors={rightValidation.fieldErrors}
-            isCheaper={rightIsCheaper}
-            plan={plans[1]}
-            title="Plan 2"
-            warnings={rightValidation.warnings}
-            onChange={(field, value) => updatePlan(1, field, value)}
-          />
+        <section className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-semibold text-slate-950">Plans</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Compare between {minimumPlanCount} and {maximumPlanCount} plans side by
+              side.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <div
+              aria-label="Plan view mode"
+              className="flex rounded-full border border-slate-200 bg-white p-1 shadow-sm"
+              role="group"
+            >
+              {[
+                ['grid', '2x2'],
+                ['scroll', 'Scroll'],
+                ['condensed', 'Condensed'],
+              ].map(([mode, label]) => (
+                <button
+                  key={mode}
+                  aria-pressed={planViewMode === mode}
+                  className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                    planViewMode === mode
+                      ? 'bg-sky-600 text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  type="button"
+                  onClick={() => setPlanViewMode(mode as PlanViewMode)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              disabled={plans.length >= maximumPlanCount}
+              type="button"
+              onClick={addPlan}
+            >
+              Add Plan
+            </button>
+          </div>
         </section>
 
-        <ComparisonResults
-          leftPlan={plans[0]}
-          leftResult={leftResult}
-          rightPlan={plans[1]}
-          rightResult={rightResult}
-        />
+        <section
+          className={planViewMode === 'scroll' ? 'overflow-x-auto pb-2' : ''}
+          data-testid="plan-layout"
+        >
+          <div className={planLayoutClass} style={planLayoutStyle}>
+            {plans.map((plan, index) => (
+              <PlanForm
+                key={`${plan.name}-${index}`}
+                compact={compactView}
+                fieldErrors={validations[index].fieldErrors}
+                isCheaper={index === cheapestPlanIndex}
+                plan={plan}
+              title={`Plan ${index + 1}`}
+              warnings={validations[index].warnings}
+              onChange={(field, value) => updatePlan(index, field, value)}
+              onRemove={
+                plans.length > minimumPlanCount ? () => removePlan(index) : undefined
+              }
+            />
+          ))}
+          </div>
+        </section>
+
+        <ComparisonResults plans={plans} results={results} viewMode={planViewMode} />
       </div>
     </main>
   )

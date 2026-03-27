@@ -5,8 +5,10 @@ interface PlanFormProps {
   title: string
   plan: InsurancePlan
   isCheaper: boolean
+  compact?: boolean
   fieldErrors?: Partial<Record<keyof InsurancePlan, string>>
   warnings?: string[]
+  onRemove?: () => void
   onChange: (field: keyof InsurancePlan, value: string | number) => void
 }
 
@@ -26,8 +28,10 @@ export function PlanForm({
   title,
   plan,
   isCheaper,
+  compact = false,
   fieldErrors = {},
   warnings = [],
+  onRemove,
   onChange,
 }: PlanFormProps) {
   const handleTextChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -54,14 +58,25 @@ export function PlanForm({
           </p>
           <h2 className="text-xl font-semibold text-slate-900">{plan.name}</h2>
         </div>
-        {isCheaper ? (
-          <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">
-            Lower Total Cost
-          </span>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {isCheaper ? (
+            <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">
+              Lower Total Cost
+            </span>
+          ) : null}
+          {onRemove ? (
+            <button
+              className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
+              type="button"
+              onClick={onRemove}
+            >
+              Remove Plan
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className={`grid gap-4 ${compact ? '' : 'sm:grid-cols-2'}`}>
         <label className="sm:col-span-2">
           <span className="mb-2 block text-sm font-medium text-slate-700">
             Plan Name
