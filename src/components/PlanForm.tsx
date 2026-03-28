@@ -1,5 +1,9 @@
 import type { ChangeEvent } from 'react'
-import type { CoverageType, InsurancePlan } from '../types/insurance'
+import type {
+  AccountContributionType,
+  CoverageType,
+  InsurancePlan,
+} from '../types/insurance'
 
 interface PlanFormProps {
   title: string
@@ -72,6 +76,16 @@ export function PlanForm({
     const { name, value } = event.target
     onChange(name as keyof InsurancePlan, value === '' ? 0 : Number(value))
   }
+
+  const handleSelectChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    onChange(
+      event.target.name as keyof InsurancePlan,
+      event.target.value as AccountContributionType,
+    )
+  }
+
+  const contributionLabel =
+    plan.accountContributionType === 'hra' ? 'HRA Contribution' : 'HSA Contribution'
 
   return (
     <section
@@ -150,6 +164,44 @@ export function PlanForm({
             ) : null}
           </label>
         ))}
+
+        <label>
+          <span className="mb-2 block text-sm font-medium text-slate-700">
+            Account Contribution Type
+          </span>
+          <select
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500"
+            name="accountContributionType"
+            value={plan.accountContributionType}
+            onChange={handleSelectChange}
+          >
+            <option value="hsa">HSA</option>
+            <option value="hra">HRA</option>
+          </select>
+        </label>
+
+        <label>
+          <span className="mb-2 block text-sm font-medium text-slate-700">
+            {contributionLabel}
+          </span>
+          <input
+            aria-invalid={Boolean(fieldErrors.hsaHraContribution)}
+            className={`w-full rounded-2xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 ${
+              fieldErrors.hsaHraContribution
+                ? 'border-rose-400 bg-rose-50'
+                : 'border-slate-200'
+            }`}
+            min="0"
+            name="hsaHraContribution"
+            step="0.01"
+            type="number"
+            value={plan.hsaHraContribution}
+            onChange={handleNumberChange}
+          />
+          {fieldErrors.hsaHraContribution ? (
+            <p className="mt-2 text-sm text-rose-600">{fieldErrors.hsaHraContribution}</p>
+          ) : null}
+        </label>
 
         {coverageFieldGroups.map((group) => {
           const isActive = coverageType === group.coverageType

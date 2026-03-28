@@ -11,6 +11,8 @@ const basePlan: InsurancePlan = {
   individualOutOfPocketMax: 5000,
   familyOutOfPocketMax: 10000,
   employerContribution: 1200,
+  accountContributionType: 'hsa',
+  hsaHraContribution: 0,
 }
 
 describe('validatePlan', () => {
@@ -45,6 +47,17 @@ describe('validatePlan', () => {
 
     expect(result.warnings).toContain(
       'Family out-of-pocket max is lower than the deductible. Double-check this plan.',
+    )
+  })
+
+  it('errors when hsa or hra contribution is negative', () => {
+    const result = validatePlan({
+      ...basePlan,
+      hsaHraContribution: -50,
+    })
+
+    expect(result.fieldErrors.hsaHraContribution).toBe(
+      'HSA/HRA contribution cannot be negative.',
     )
   })
 })

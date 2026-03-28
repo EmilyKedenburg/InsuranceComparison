@@ -64,9 +64,12 @@ function SummaryCard({
       <div className="mt-5 space-y-2 text-sm text-slate-600">
         <p>Annual premium: {formatCurrency(result.premiumCost)}</p>
         <p>Medical cost paid: {formatCurrency(result.medicalCostPaid)}</p>
+        <p>Employer contribution: -{formatCurrency(result.employerContribution)}</p>
         <p>
-          Employer contribution: -{formatCurrency(result.employerContribution)}
+          {plan.accountContributionType.toUpperCase()} contribution: -
+          {formatCurrency(result.hsaHraContribution)}
         </p>
+        <p>Total contributions: -{formatCurrency(result.totalContribution)}</p>
       </div>
     </article>
   )

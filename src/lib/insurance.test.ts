@@ -15,6 +15,8 @@ const basePlan: InsurancePlan = {
   individualOutOfPocketMax: 5000,
   familyOutOfPocketMax: 10000,
   employerContribution: 1200,
+  accountContributionType: 'hsa',
+  hsaHraContribution: 0,
 }
 
 describe('calculateMedicalCostPaid', () => {
@@ -155,19 +157,28 @@ describe('calculateAnnualCost', () => {
       premiumCost: 3000,
       medicalCostPaid: 1900,
       employerContribution: 1200,
+      hsaHraContribution: 0,
+      totalContribution: 1200,
       totalAnnualCost: 3700,
     })
   })
 
-  it('returns premium minus employer contribution when medical spend is 0', () => {
-    expect(calculateAnnualCost(basePlan, 0).totalAnnualCost).toBe(1800)
+  it('returns premium minus total contributions when medical spend is 0', () => {
+    const contributedPlan: InsurancePlan = {
+      ...basePlan,
+      employerContribution: 1000,
+      hsaHraContribution: 300,
+    }
+
+    expect(calculateAnnualCost(contributedPlan, 0).totalAnnualCost).toBe(1700)
   })
 
-  it('clamps negative premium and employer contribution inputs to zero', () => {
+  it('clamps negative premium and contribution inputs to zero', () => {
     const invalidPlan: InsurancePlan = {
       ...basePlan,
       monthlyPremium: -100,
       employerContribution: -400,
+      hsaHraContribution: -200,
     }
 
     expect(calculateAnnualCost(invalidPlan, 1000)).toEqual({
@@ -175,6 +186,8 @@ describe('calculateAnnualCost', () => {
       premiumCost: 0,
       medicalCostPaid: 1000,
       employerContribution: 0,
+      hsaHraContribution: 0,
+      totalContribution: 0,
       totalAnnualCost: 1000,
     })
   })
@@ -189,6 +202,7 @@ describe('calculateAnnualCost', () => {
       individualOutOfPocketMax: Number.POSITIVE_INFINITY,
       familyOutOfPocketMax: Number.POSITIVE_INFINITY,
       employerContribution: Number.POSITIVE_INFINITY,
+      hsaHraContribution: Number.NaN,
     }
 
     expect(calculateAnnualCost(nonFinitePlan, Number.NaN)).toEqual({
@@ -196,13 +210,18 @@ describe('calculateAnnualCost', () => {
       premiumCost: 0,
       medicalCostPaid: 0,
       employerContribution: 0,
+      hsaHraContribution: 0,
+      totalContribution: 0,
       totalAnnualCost: 0,
     })
   })
 
-  it('never returns a total cost below annual premium minus employer contribution unless intentionally allowed', () => {
+  it('never returns a total cost below annual premium minus total contributions unless intentionally allowed', () => {
     const result = calculateAnnualCost(basePlan, 8000)
-    const baseline = basePlan.monthlyPremium * 12 - basePlan.employerContribution
+    const baseline =
+      basePlan.monthlyPremium * 12 -
+      basePlan.employerContribution -
+      basePlan.hsaHraContribution
 
     expect(result.totalAnnualCost).toBeGreaterThanOrEqual(baseline)
   })
@@ -212,9 +231,45 @@ describe('calculateAnnualCost', () => {
       ...basePlan,
       monthlyPremium: 100,
       employerContribution: 2500,
+      hsaHraContribution: 400,
     }
 
     expect(calculateAnnualCost(heavilySubsidizedPlan, 0).totalAnnualCost).toBe(0)
+  })
+
+  it('subtracts both employer and hsa or hra contributions from the annual total', () => {
+    const contributedPlan: InsurancePlan = {
+      ...basePlan,
+      employerContribution: 900,
+      accountContributionType: 'hra',
+      hsaHraContribution: 600,
+    }
+
+    expect(calculateAnnualCost(contributedPlan, 3500)).toEqual({
+      medicalSpendInput: 3500,
+      premiumCost: 3000,
+      medicalCostPaid: 1900,
+      employerContribution: 900,
+      hsaHraContribution: 600,
+      totalContribution: 1500,
+      totalAnnualCost: 3400,
+    })
+  })
+
+  it('uses the same contribution math for either hsa or hra plans', () => {
+    const hsaPlan: InsurancePlan = {
+      ...basePlan,
+      accountContributionType: 'hsa',
+      hsaHraContribution: 400,
+    }
+    const hraPlan: InsurancePlan = {
+      ...basePlan,
+      accountContributionType: 'hra',
+      hsaHraContribution: 400,
+    }
+
+    expect(calculateAnnualCost(hsaPlan, 3500).totalAnnualCost).toBe(3300)
+    expect(calculateAnnualCost(hraPlan, 3500).totalAnnualCost).toBe(3300)
   })
 
   it('rounds annual money values to the nearest cent', () => {
@@ -224,6 +279,7 @@ describe('calculateAnnualCost', () => {
       individualDeductible: 100,
       coinsurance: 50,
       employerContribution: 10.005,
+      hsaHraContribution: 5.005,
     }
 
     expect(calculateAnnualCost(roundingPlan, 100.05)).toEqual({
@@ -231,7 +287,9 @@ describe('calculateAnnualCost', () => {
       premiumCost: 1481.47,
       medicalCostPaid: 100.03,
       employerContribution: 10.01,
-      totalAnnualCost: 1571.49,
+      hsaHraContribution: 5.01,
+      totalContribution: 15.02,
+      totalAnnualCost: 1566.48,
     })
   })
 
@@ -241,6 +299,8 @@ describe('calculateAnnualCost', () => {
       premiumCost: 3000,
       medicalCostPaid: 3100,
       employerContribution: 1200,
+      hsaHraContribution: 0,
+      totalContribution: 1200,
       totalAnnualCost: 4900,
     })
   })

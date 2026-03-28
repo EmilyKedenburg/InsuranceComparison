@@ -97,6 +97,34 @@ describe('App integration', () => {
     expect(within(ppoSummaryCard).getByText('Annual premium: $1,481.40')).toBeInTheDocument()
   })
 
+  it('updates totals when hsa contribution changes', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const contributionInputs = screen.getAllByLabelText('HSA Contribution')
+    await user.clear(contributionInputs[0])
+    await user.type(contributionInputs[0], '500')
+
+    const ppoSummaryCard = getSummaryCard('PPO Plan')
+    expect(within(ppoSummaryCard).getByText('$4,540')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('HSA contribution: -$500')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('Total contributions: -$1,500')).toBeInTheDocument()
+  })
+
+  it('lets a user switch a plan between hsa and hra contribution types', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const typeSelects = screen.getAllByLabelText('Account Contribution Type')
+    await user.selectOptions(typeSelects[0], 'hra')
+
+    expect(screen.getAllByLabelText('HRA Contribution')).toHaveLength(1)
+    expect(screen.getAllByLabelText('HSA Contribution')).toHaveLength(1)
+
+    const ppoSummaryCard = getSummaryCard('PPO Plan')
+    expect(within(ppoSummaryCard).getByText('HRA contribution: -$0')).toBeInTheDocument()
+  })
+
   it('disables family deductible and oop fields during individual coverage', () => {
     render(<App />)
 

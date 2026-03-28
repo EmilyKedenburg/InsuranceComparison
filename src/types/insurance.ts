@@ -1,4 +1,5 @@
 export type CoverageType = 'individual' | 'family'
+export type AccountContributionType = 'hsa' | 'hra'
 
 export interface InsurancePlan {
   name: string
@@ -9,6 +10,8 @@ export interface InsurancePlan {
   individualOutOfPocketMax: number
   familyOutOfPocketMax: number
   employerContribution: number
+  accountContributionType: AccountContributionType
+  hsaHraContribution: number
 }
 
 export interface AnnualCostBreakdown {
@@ -16,5 +19,7 @@ export interface AnnualCostBreakdown {
   premiumCost: number
   medicalCostPaid: number
   employerContribution: number
+  hsaHraContribution: number
+  totalContribution: number
   totalAnnualCost: number
 }

@@ -46,14 +46,18 @@ export function calculateAnnualCost(
   const premiumCost = roundToCents(clampToZero(plan.monthlyPremium) * 12)
   const medicalCostPaid = calculateMedicalCostPaid(plan, annualMedicalSpend, coverageType)
   const employerContribution = roundToCents(clampToZero(plan.employerContribution))
+  const hsaHraContribution = roundToCents(clampToZero(plan.hsaHraContribution))
+  const totalContribution = roundToCents(employerContribution + hsaHraContribution)
 
   return {
     medicalSpendInput: clampToZero(annualMedicalSpend),
     premiumCost,
     medicalCostPaid,
     employerContribution,
+    hsaHraContribution,
+    totalContribution,
     totalAnnualCost: roundToCents(
-      clampToZero(premiumCost + medicalCostPaid - employerContribution),
+      clampToZero(premiumCost + medicalCostPaid - totalContribution),
     ),
   }
 }
