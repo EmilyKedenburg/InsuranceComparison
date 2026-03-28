@@ -9,9 +9,11 @@ import type { InsurancePlan } from '../types/insurance'
 const basePlan: InsurancePlan = {
   name: 'Test Plan',
   monthlyPremium: 250,
-  deductible: 1500,
+  individualDeductible: 1500,
+  familyDeductible: 3000,
   coinsurance: 20,
-  outOfPocketMax: 5000,
+  individualOutOfPocketMax: 5000,
+  familyOutOfPocketMax: 10000,
   employerContribution: 1200,
 }
 
@@ -47,7 +49,7 @@ describe('calculateMedicalCostPaid', () => {
   it('returns zero when the out-of-pocket maximum is zero', () => {
     const zeroMaxPlan: InsurancePlan = {
       ...basePlan,
-      outOfPocketMax: 0,
+      individualOutOfPocketMax: 0,
     }
 
     expect(calculateMedicalCostPaid(zeroMaxPlan, 6000)).toBe(0)
@@ -56,8 +58,8 @@ describe('calculateMedicalCostPaid', () => {
   it('honors the out-of-pocket maximum even when it is below the deductible', () => {
     const lowMaxPlan: InsurancePlan = {
       ...basePlan,
-      deductible: 3000,
-      outOfPocketMax: 1200,
+      individualDeductible: 3000,
+      individualOutOfPocketMax: 1200,
     }
 
     expect(calculateMedicalCostPaid(lowMaxPlan, 2000)).toBe(1200)
@@ -76,9 +78,9 @@ describe('calculateMedicalCostPaid', () => {
   it('handles decimal or percentage inputs correctly', () => {
     const decimalPlan: InsurancePlan = {
       ...basePlan,
-      deductible: 1000,
+      individualDeductible: 1000,
       coinsurance: 12.5,
-      outOfPocketMax: 5000,
+      individualOutOfPocketMax: 5000,
     }
 
     expect(calculateMedicalCostPaid(decimalPlan, 1800)).toBe(1100)
@@ -87,9 +89,9 @@ describe('calculateMedicalCostPaid', () => {
   it('rounds medical cost paid to the nearest cent', () => {
     const roundingPlan: InsurancePlan = {
       ...basePlan,
-      deductible: 100,
+      individualDeductible: 100,
       coinsurance: 50,
-      outOfPocketMax: 5000,
+      individualOutOfPocketMax: 5000,
     }
 
     expect(calculateMedicalCostPaid(roundingPlan, 100.05)).toBe(100.03)
@@ -98,9 +100,9 @@ describe('calculateMedicalCostPaid', () => {
   it('clamps negative deductible and negative coinsurance to zero', () => {
     const invalidCostSharingPlan: InsurancePlan = {
       ...basePlan,
-      deductible: -500,
+      individualDeductible: -500,
       coinsurance: -10,
-      outOfPocketMax: 4000,
+      individualOutOfPocketMax: 4000,
     }
 
     expect(calculateMedicalCostPaid(invalidCostSharingPlan, 3200)).toBe(0)
@@ -109,12 +111,40 @@ describe('calculateMedicalCostPaid', () => {
   it('treats coinsurance as a percentage and clamps values above 100 percent', () => {
     const highCoinsurancePlan: InsurancePlan = {
       ...basePlan,
-      deductible: 1000,
+      individualDeductible: 1000,
       coinsurance: 150,
-      outOfPocketMax: 10000,
+      individualOutOfPocketMax: 10000,
     }
 
     expect(calculateMedicalCostPaid(highCoinsurancePlan, 4000)).toBe(4000)
+  })
+
+  it('uses family deductible and out-of-pocket max when family coverage is selected', () => {
+    expect(calculateMedicalCostPaid(basePlan, 3500, 'family')).toBe(3100)
+  })
+
+  it('returns zero when the family out-of-pocket maximum is zero', () => {
+    const zeroFamilyMaxPlan: InsurancePlan = {
+      ...basePlan,
+      familyOutOfPocketMax: 0,
+    }
+
+    expect(calculateMedicalCostPaid(zeroFamilyMaxPlan, 6000, 'family')).toBe(0)
+  })
+
+  it('honors the family out-of-pocket maximum even when it is below the family deductible', () => {
+    const lowFamilyMaxPlan: InsurancePlan = {
+      ...basePlan,
+      familyDeductible: 7000,
+      familyOutOfPocketMax: 2500,
+    }
+
+    expect(calculateMedicalCostPaid(lowFamilyMaxPlan, 5000, 'family')).toBe(2500)
+    expect(calculateMedicalCostPaid(lowFamilyMaxPlan, 15000, 'family')).toBe(2500)
+  })
+
+  it('handles spend exactly equal to the family deductible', () => {
+    expect(calculateMedicalCostPaid(basePlan, 3000, 'family')).toBe(3000)
   })
 })
 
@@ -153,9 +183,11 @@ describe('calculateAnnualCost', () => {
     const nonFinitePlan: InsurancePlan = {
       ...basePlan,
       monthlyPremium: Number.NaN,
-      deductible: Number.POSITIVE_INFINITY,
+      individualDeductible: Number.POSITIVE_INFINITY,
+      familyDeductible: Number.POSITIVE_INFINITY,
       coinsurance: Number.NaN,
-      outOfPocketMax: Number.POSITIVE_INFINITY,
+      individualOutOfPocketMax: Number.POSITIVE_INFINITY,
+      familyOutOfPocketMax: Number.POSITIVE_INFINITY,
       employerContribution: Number.POSITIVE_INFINITY,
     }
 
@@ -189,7 +221,7 @@ describe('calculateAnnualCost', () => {
     const roundingPlan: InsurancePlan = {
       ...basePlan,
       monthlyPremium: 123.456,
-      deductible: 100,
+      individualDeductible: 100,
       coinsurance: 50,
       employerContribution: 10.005,
     }
@@ -200,6 +232,16 @@ describe('calculateAnnualCost', () => {
       medicalCostPaid: 100.03,
       employerContribution: 10.01,
       totalAnnualCost: 1571.49,
+    })
+  })
+
+  it('uses the selected family thresholds when calculating annual cost', () => {
+    expect(calculateAnnualCost(basePlan, 3500, 'family')).toEqual({
+      medicalSpendInput: 3500,
+      premiumCost: 3000,
+      medicalCostPaid: 3100,
+      employerContribution: 1200,
+      totalAnnualCost: 4900,
     })
   })
 })

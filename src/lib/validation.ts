@@ -25,8 +25,10 @@ export function validatePlan(plan: InsurancePlan): ValidationResult {
     label: string
   }> = [
     { key: 'monthlyPremium', label: 'Monthly premium' },
-    { key: 'deductible', label: 'Deductible' },
-    { key: 'outOfPocketMax', label: 'Out-of-pocket max' },
+    { key: 'individualDeductible', label: 'Individual deductible' },
+    { key: 'familyDeductible', label: 'Family deductible' },
+    { key: 'individualOutOfPocketMax', label: 'Individual out-of-pocket max' },
+    { key: 'familyOutOfPocketMax', label: 'Family out-of-pocket max' },
     { key: 'employerContribution', label: 'Employer contribution' },
   ]
 
@@ -56,13 +58,47 @@ export function validatePlan(plan: InsurancePlan): ValidationResult {
   }
 
   if (
-    isFiniteNumber(plan.deductible) &&
-    isFiniteNumber(plan.outOfPocketMax) &&
-    plan.deductible > 0 &&
-    plan.outOfPocketMax > 0 &&
-    plan.outOfPocketMax < plan.deductible
+    isFiniteNumber(plan.individualDeductible) &&
+    isFiniteNumber(plan.individualOutOfPocketMax) &&
+    plan.individualDeductible > 0 &&
+    plan.individualOutOfPocketMax > 0 &&
+    plan.individualOutOfPocketMax < plan.individualDeductible
   ) {
-    warnings.push('Out-of-pocket max is lower than the deductible. Double-check this plan.')
+    warnings.push(
+      'Individual out-of-pocket max is lower than the deductible. Double-check this plan.',
+    )
+  }
+
+  if (
+    isFiniteNumber(plan.familyDeductible) &&
+    isFiniteNumber(plan.familyOutOfPocketMax) &&
+    plan.familyDeductible > 0 &&
+    plan.familyOutOfPocketMax > 0 &&
+    plan.familyOutOfPocketMax < plan.familyDeductible
+  ) {
+    warnings.push(
+      'Family out-of-pocket max is lower than the deductible. Double-check this plan.',
+    )
+  }
+
+  if (
+    isFiniteNumber(plan.individualDeductible) &&
+    isFiniteNumber(plan.familyDeductible) &&
+    plan.familyDeductible < plan.individualDeductible
+  ) {
+    warnings.push(
+      'Family deductible is lower than the individual deductible. Double-check this plan.',
+    )
+  }
+
+  if (
+    isFiniteNumber(plan.individualOutOfPocketMax) &&
+    isFiniteNumber(plan.familyOutOfPocketMax) &&
+    plan.familyOutOfPocketMax < plan.individualOutOfPocketMax
+  ) {
+    warnings.push(
+      'Family out-of-pocket max is lower than the individual out-of-pocket max. Double-check this plan.',
+    )
   }
 
   return { errors, warnings, fieldErrors }

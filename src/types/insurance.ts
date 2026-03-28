@@ -1,9 +1,13 @@
+export type CoverageType = 'individual' | 'family'
+
 export interface InsurancePlan {
   name: string
   monthlyPremium: number
-  deductible: number
+  individualDeductible: number
+  familyDeductible: number
   coinsurance: number
-  outOfPocketMax: number
+  individualOutOfPocketMax: number
+  familyOutOfPocketMax: number
   employerContribution: number
 }
 

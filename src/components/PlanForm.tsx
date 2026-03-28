@@ -1,10 +1,11 @@
 import type { ChangeEvent } from 'react'
-import type { InsurancePlan } from '../types/insurance'
+import type { CoverageType, InsurancePlan } from '../types/insurance'
 
 interface PlanFormProps {
   title: string
   plan: InsurancePlan
   isCheaper: boolean
+  coverageType: CoverageType
   compact?: boolean
   fieldErrors?: Partial<Record<keyof InsurancePlan, string>>
   warnings?: string[]
@@ -18,16 +19,45 @@ const numericFields: Array<{
   step?: string
 }> = [
   { key: 'monthlyPremium', label: 'Monthly Premium' },
-  { key: 'deductible', label: 'Deductible' },
   { key: 'coinsurance', label: 'Coinsurance (%)', step: '1' },
-  { key: 'outOfPocketMax', label: 'Out-of-Pocket Max' },
   { key: 'employerContribution', label: 'Employer Contribution' },
+]
+
+const coverageFieldGroups: Array<{
+  title: string
+  coverageType: CoverageType
+  fields: Array<{
+    key:
+      | 'individualDeductible'
+      | 'familyDeductible'
+      | 'individualOutOfPocketMax'
+      | 'familyOutOfPocketMax'
+    label: string
+  }>
+}> = [
+  {
+    title: 'Individual Coverage',
+    coverageType: 'individual',
+    fields: [
+      { key: 'individualDeductible', label: 'Individual Deductible' },
+      { key: 'individualOutOfPocketMax', label: 'Individual OOP Max' },
+    ],
+  },
+  {
+    title: 'Family Coverage',
+    coverageType: 'family',
+    fields: [
+      { key: 'familyDeductible', label: 'Family Deductible' },
+      { key: 'familyOutOfPocketMax', label: 'Family OOP Max' },
+    ],
+  },
 ]
 
 export function PlanForm({
   title,
   plan,
   isCheaper,
+  coverageType,
   compact = false,
   fieldErrors = {},
   warnings = [],
@@ -120,6 +150,62 @@ export function PlanForm({
             ) : null}
           </label>
         ))}
+
+        {coverageFieldGroups.map((group) => {
+          const isActive = coverageType === group.coverageType
+
+          return (
+            <div
+              key={group.title}
+              className={`rounded-2xl border p-4 ${compact ? '' : 'sm:col-span-2'} ${
+                isActive
+                  ? 'border-sky-200 bg-sky-50/70'
+                  : 'border-slate-200 bg-slate-50 text-slate-400'
+              }`}
+            >
+              <p
+                className={`mb-3 text-sm font-semibold uppercase tracking-[0.16em] ${
+                  isActive ? 'text-sky-700' : 'text-slate-400'
+                }`}
+              >
+                {group.title}
+              </p>
+              <div className={`grid gap-4 ${compact ? '' : 'sm:grid-cols-2'}`}>
+                {group.fields.map((field) => (
+                  <label key={field.key}>
+                    <span
+                      className={`mb-2 block text-sm font-medium ${
+                        isActive ? 'text-slate-700' : 'text-slate-400'
+                      }`}
+                    >
+                      {field.label}
+                    </span>
+                    <input
+                      aria-invalid={isActive && Boolean(fieldErrors[field.key])}
+                      className={`w-full rounded-2xl border px-4 py-3 outline-none transition ${
+                        !isActive
+                          ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                          : fieldErrors[field.key]
+                            ? 'border-rose-400 bg-rose-50 text-slate-900 focus:border-sky-500'
+                            : 'border-slate-200 bg-white text-slate-900 focus:border-sky-500'
+                      }`}
+                      disabled={!isActive}
+                      min="0"
+                      name={field.key}
+                      step="0.01"
+                      type="number"
+                      value={plan[field.key]}
+                      onChange={handleNumberChange}
+                    />
+                    {isActive && fieldErrors[field.key] ? (
+                      <p className="mt-2 text-sm text-rose-600">{fieldErrors[field.key]}</p>
+                    ) : null}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {warnings.length > 0 ? (

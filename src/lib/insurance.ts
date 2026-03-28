@@ -1,4 +1,8 @@
-import type { AnnualCostBreakdown, InsurancePlan } from '../types/insurance'
+import type {
+  AnnualCostBreakdown,
+  CoverageType,
+  InsurancePlan,
+} from '../types/insurance'
 
 const clampToZero = (value: number) => (Number.isFinite(value) ? Math.max(0, value) : 0)
 const roundToCents = (value: number) =>
@@ -7,10 +11,17 @@ const roundToCents = (value: number) =>
 export function calculateMedicalCostPaid(
   plan: InsurancePlan,
   annualMedicalSpend: number,
+  coverageType: CoverageType = 'individual',
 ): number {
   const spend = clampToZero(annualMedicalSpend)
-  const deductible = clampToZero(plan.deductible)
-  const outOfPocketMax = clampToZero(plan.outOfPocketMax)
+  const deductible = clampToZero(
+    coverageType === 'family' ? plan.familyDeductible : plan.individualDeductible,
+  )
+  const outOfPocketMax = clampToZero(
+    coverageType === 'family'
+      ? plan.familyOutOfPocketMax
+      : plan.individualOutOfPocketMax,
+  )
   const coinsuranceRate = Math.min(Math.max(plan.coinsurance / 100, 0), 1)
 
   if (spend === 0 || outOfPocketMax === 0) {
@@ -30,9 +41,10 @@ export function calculateMedicalCostPaid(
 export function calculateAnnualCost(
   plan: InsurancePlan,
   annualMedicalSpend: number,
+  coverageType: CoverageType = 'individual',
 ): AnnualCostBreakdown {
   const premiumCost = roundToCents(clampToZero(plan.monthlyPremium) * 12)
-  const medicalCostPaid = calculateMedicalCostPaid(plan, annualMedicalSpend)
+  const medicalCostPaid = calculateMedicalCostPaid(plan, annualMedicalSpend, coverageType)
   const employerContribution = roundToCents(clampToZero(plan.employerContribution))
 
   return {

@@ -1,18 +1,37 @@
-import type { AnnualCostBreakdown, InsurancePlan } from '../types/insurance'
+import type {
+  AnnualCostBreakdown,
+  CoverageType,
+  InsurancePlan,
+} from '../types/insurance'
 import { getCheapestPlanIndex } from '../lib/insurance'
 
 interface ComparisonResultsProps {
   plans: InsurancePlan[]
   results: AnnualCostBreakdown[]
+  coverageType: CoverageType
   viewMode: 'grid' | 'scroll' | 'condensed'
 }
 
-const currencyFormatter = new Intl.NumberFormat('en-US', {
+const wholeDollarFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+})
+
+const centsFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 })
+
+function formatCurrency(value: number) {
+  const roundedValue = Math.round((value + Number.EPSILON) * 100) / 100
+  return Number.isInteger(roundedValue)
+    ? wholeDollarFormatter.format(roundedValue)
+    : centsFormatter.format(roundedValue)
+}
 
 function SummaryCard({
   label,
@@ -40,13 +59,13 @@ function SummaryCard({
         {plan.name}
       </h3>
       <p className={`mt-4 font-bold text-slate-950 ${compact ? 'text-3xl' : 'text-4xl'}`}>
-        {currencyFormatter.format(result.totalAnnualCost)}
+        {formatCurrency(result.totalAnnualCost)}
       </p>
       <div className="mt-5 space-y-2 text-sm text-slate-600">
-        <p>Annual premium: {currencyFormatter.format(result.premiumCost)}</p>
-        <p>Medical cost paid: {currencyFormatter.format(result.medicalCostPaid)}</p>
+        <p>Annual premium: {formatCurrency(result.premiumCost)}</p>
+        <p>Medical cost paid: {formatCurrency(result.medicalCostPaid)}</p>
         <p>
-          Employer contribution: -{currencyFormatter.format(result.employerContribution)}
+          Employer contribution: -{formatCurrency(result.employerContribution)}
         </p>
       </div>
     </article>
@@ -56,6 +75,7 @@ function SummaryCard({
 export function ComparisonResults({
   plans,
   results,
+  coverageType,
   viewMode,
 }: ComparisonResultsProps) {
   const cheapestPlanIndex = getCheapestPlanIndex(results)
@@ -86,9 +106,12 @@ export function ComparisonResults({
         <h2 className="text-2xl font-semibold text-slate-950">
           Based on your annual medical spend
         </h2>
+        <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
+          {coverageType} coverage selected
+        </p>
         <p className="text-slate-600">
           {plans[cheapestPlanIndex].name} is currently the cheapest plan
-          {sortedTotals.length > 1 ? ` by ${currencyFormatter.format(savings)}` : ''}.
+          {sortedTotals.length > 1 ? ` by ${formatCurrency(savings)}` : ''}.
         </p>
       </div>
 

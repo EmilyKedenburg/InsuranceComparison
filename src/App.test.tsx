@@ -41,11 +41,25 @@ describe('App integration', () => {
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     const hdhpSummaryCard = getSummaryCard('HDHP Plan')
 
-    expect(within(ppoSummaryCard).getByText('$2,840.00')).toBeInTheDocument()
-    expect(within(hdhpSummaryCard).getByText('$420.00')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$2,840')).toBeInTheDocument()
+    expect(within(hdhpSummaryCard).getByText('$420')).toBeInTheDocument()
     expect(
-      screen.getByText(/HDHP Plan is currently the cheapest plan by \$2,420\.00\./)
+      screen.getByText(/HDHP Plan is currently the cheapest plan by \$2,420\./)
     ).toBeInTheDocument()
+  })
+
+  it('uses family coverage thresholds when family coverage is selected', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'family' }))
+
+    const ppoSummaryCard = getSummaryCard('PPO Plan')
+    const hdhpSummaryCard = getSummaryCard('HDHP Plan')
+
+    expect(within(ppoSummaryCard).getByText('$6,240')).toBeInTheDocument()
+    expect(within(hdhpSummaryCard).getByText('$5,420')).toBeInTheDocument()
+    expect(screen.getByText('family coverage selected')).toBeInTheDocument()
   })
 
   it('updates totals and cheaper-plan highlight when plan inputs change', async () => {
@@ -61,12 +75,12 @@ describe('App integration', () => {
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     const hdhpSummaryCard = getSummaryCard('HDHP Plan')
 
-    expect(within(ppoSummaryCard).getByText('$2,400.00')).toBeInTheDocument()
-    expect(within(hdhpSummaryCard).getByText('$3,800.00')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$2,400')).toBeInTheDocument()
+    expect(within(hdhpSummaryCard).getByText('$3,800')).toBeInTheDocument()
     expect(within(ppoFormSection).getByText('Lower Total Cost')).toBeInTheDocument()
     expect(within(hdhpFormSection).queryByText('Lower Total Cost')).not.toBeInTheDocument()
     expect(
-      screen.getByText(/PPO Plan is currently the cheapest plan by \$1,400\.00\./)
+      screen.getByText(/PPO Plan is currently the cheapest plan by \$1,400\./)
     ).toBeInTheDocument()
   })
 
@@ -81,6 +95,38 @@ describe('App integration', () => {
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     expect(within(ppoSummaryCard).getByText('$2,681.40')).toBeInTheDocument()
     expect(within(ppoSummaryCard).getByText('Annual premium: $1,481.40')).toBeInTheDocument()
+  })
+
+  it('disables family deductible and oop fields during individual coverage', () => {
+    render(<App />)
+
+    expect(screen.getAllByLabelText('Individual Deductible')).toHaveLength(2)
+    expect(screen.getAllByLabelText('Individual OOP Max')).toHaveLength(2)
+    screen.getAllByLabelText('Family Deductible').forEach((field) => {
+      expect(field).toBeDisabled()
+    })
+    screen.getAllByLabelText('Family OOP Max').forEach((field) => {
+      expect(field).toBeDisabled()
+    })
+  })
+
+  it('disables individual deductible and oop fields during family coverage', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'family' }))
+
+    expect(screen.getAllByLabelText('Family Deductible')).toHaveLength(2)
+    expect(screen.getAllByLabelText('Family OOP Max')).toHaveLength(2)
+    screen.getAllByLabelText('Individual Deductible').forEach((field) => {
+      expect(field).toBeDisabled()
+    })
+    screen.getAllByLabelText('Individual OOP Max').forEach((field) => {
+      expect(field).toBeDisabled()
+    })
+    screen.getAllByLabelText('Family Deductible').forEach((field) => {
+      expect(field).not.toBeDisabled()
+    })
   })
 
   it('allows switching between plan view modes', async () => {

@@ -4,7 +4,7 @@ import { PlanForm } from './components/PlanForm'
 import { defaultPlans } from './data/defaultPlans'
 import { calculateAnnualCost, getCheapestPlanIndex } from './lib/insurance'
 import { validateAnnualMedicalSpend, validatePlan } from './lib/validation'
-import type { InsurancePlan } from './types/insurance'
+import type { CoverageType, InsurancePlan } from './types/insurance'
 
 const minimumPlanCount = 2
 const maximumPlanCount = 4
@@ -14,6 +14,7 @@ type PlanViewMode = 'grid' | 'scroll' | 'condensed'
 export default function App() {
   const [plans, setPlans] = useState<InsurancePlan[]>(initialPlans)
   const [annualMedicalSpend, setAnnualMedicalSpend] = useState(5000)
+  const [coverageType, setCoverageType] = useState<CoverageType>('individual')
   const [planViewMode, setPlanViewMode] = useState<PlanViewMode>('scroll')
 
   const updatePlan = (
@@ -46,7 +47,9 @@ export default function App() {
     )
   }
 
-  const results = plans.map((plan) => calculateAnnualCost(plan, annualMedicalSpend))
+  const results = plans.map((plan) =>
+    calculateAnnualCost(plan, annualMedicalSpend, coverageType),
+  )
   const cheapestPlanIndex = getCheapestPlanIndex(results)
   const validations = plans.map((plan) => validatePlan(plan))
   const spendValidation = validateAnnualMedicalSpend(annualMedicalSpend)
@@ -107,6 +110,31 @@ export default function App() {
               </p>
             ) : null}
           </label>
+
+          <div className="mt-6">
+            <p className="mb-2 text-sm font-medium text-slate-700">Coverage Type</p>
+            <div
+              aria-label="Coverage type"
+              className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm"
+              role="group"
+            >
+              {(['individual', 'family'] as CoverageType[]).map((type) => (
+                <button
+                  key={type}
+                  aria-pressed={coverageType === type}
+                  className={`rounded-full px-4 py-2 text-sm font-medium capitalize transition ${
+                    coverageType === type
+                      ? 'bg-sky-600 text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  type="button"
+                  onClick={() => setCoverageType(type)}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {hasValidationIssues ? (
             <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -169,6 +197,7 @@ export default function App() {
             {plans.map((plan, index) => (
               <PlanForm
                 key={`${plan.name}-${index}`}
+                coverageType={coverageType}
                 compact={compactView}
                 fieldErrors={validations[index].fieldErrors}
                 isCheaper={index === cheapestPlanIndex}
@@ -184,7 +213,12 @@ export default function App() {
           </div>
         </section>
 
-        <ComparisonResults plans={plans} results={results} viewMode={planViewMode} />
+        <ComparisonResults
+          coverageType={coverageType}
+          plans={plans}
+          results={results}
+          viewMode={planViewMode}
+        />
       </div>
     </main>
   )
