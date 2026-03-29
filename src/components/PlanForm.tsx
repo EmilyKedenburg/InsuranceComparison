@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import type { ChangeEvent, FocusEvent } from 'react'
+import type { ChangeEvent, FocusEvent, MouseEvent } from 'react'
 import type { CoverageType, InsurancePlan } from '../types/insurance'
 
 interface PlanFormProps {
@@ -68,6 +68,7 @@ export function PlanForm({
   onChange,
 }: PlanFormProps) {
   const [activeTooltip, setActiveTooltip] = useState<'hsa' | 'hra' | null>(null)
+  const [draftNumbers, setDraftNumbers] = useState<Partial<Record<keyof InsurancePlan, string>>>({})
   const hsaTooltipId = useId()
   const hraTooltipId = useId()
 
@@ -77,13 +78,37 @@ export function PlanForm({
 
   const handleNumberChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target
-    onChange(name as keyof InsurancePlan, value === '' ? 0 : Number(value))
+    const field = name as keyof InsurancePlan
+
+    setDraftNumbers((currentDrafts) => ({
+      ...currentDrafts,
+      [field]: value,
+    }))
+
+    if (value !== '') {
+      onChange(field, Number(value))
+    }
   }
 
-  const handleNumberFocus = (event: FocusEvent<HTMLInputElement>) => {
-    if (Number(event.target.value) === 0) {
-      event.target.select()
-    }
+  const handleInputFocus = (event: FocusEvent<HTMLInputElement>) => {
+    event.target.select()
+  }
+
+  const handleInputClick = (event: MouseEvent<HTMLInputElement>) => {
+    event.currentTarget.select()
+  }
+
+  const handleNumberBlur = (event: FocusEvent<HTMLInputElement>) => {
+    const { name, value } = event.target
+    const field = name as keyof InsurancePlan
+
+    onChange(field, value === '' ? 0 : Number(value))
+
+    setDraftNumbers((currentDrafts) => {
+      const nextDrafts = { ...currentDrafts }
+      delete nextDrafts[field]
+      return nextDrafts
+    })
   }
 
   const contributionTooltips = {
@@ -105,6 +130,7 @@ export function PlanForm({
         className={`inline-flex shrink-0 items-center justify-center rounded-full border border-sky-200 bg-sky-50 font-semibold leading-none text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 focus:border-sky-400 focus:bg-sky-100 focus:outline-none ${
           compactButton ? 'h-4 w-4 text-[10px]' : 'h-5 w-5 text-[11px]'
         }`}
+        tabIndex={-1}
         type="button"
         onBlur={() => setActiveTooltip(null)}
         onFocus={() => setActiveTooltip(tooltipKey)}
@@ -153,6 +179,7 @@ export function PlanForm({
           {onRemove ? (
             <button
               className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
+              tabIndex={-1}
               type="button"
               onClick={onRemove}
             >
@@ -191,6 +218,8 @@ export function PlanForm({
             type="text"
             value={plan.name}
             onChange={handleTextChange}
+            onClick={handleInputClick}
+            onFocus={handleInputFocus}
           />
           {fieldErrors.name ? (
             <p className="mt-2 text-sm text-rose-600">{fieldErrors.name}</p>
@@ -213,9 +242,11 @@ export function PlanForm({
               name={field.key}
               step={field.step ?? '0.01'}
               type="number"
-              value={plan[field.key]}
+              value={draftNumbers[field.key] ?? plan[field.key]}
               onChange={handleNumberChange}
-              onFocus={handleNumberFocus}
+              onBlur={handleNumberBlur}
+              onClick={handleInputClick}
+              onFocus={handleInputFocus}
             />
             {fieldErrors[field.key] ? (
               <p className="mt-2 text-sm text-rose-600">{fieldErrors[field.key]}</p>
@@ -266,9 +297,11 @@ export function PlanForm({
                   name={key}
                   step="0.01"
                   type="number"
-                  value={plan[key]}
+                  value={draftNumbers[key] ?? plan[key]}
                   onChange={handleNumberChange}
-                  onFocus={handleNumberFocus}
+                  onBlur={handleNumberBlur}
+                  onClick={handleInputClick}
+                  onFocus={handleInputFocus}
                 />
                 {fieldErrors[key] ? (
                   <p className="mt-2 text-sm text-rose-600">{fieldErrors[key]}</p>
@@ -324,9 +357,11 @@ export function PlanForm({
                       name={field.key}
                       step="0.01"
                       type="number"
-                      value={plan[field.key]}
+                      value={draftNumbers[field.key] ?? plan[field.key]}
                       onChange={handleNumberChange}
-                      onFocus={handleNumberFocus}
+                      onBlur={handleNumberBlur}
+                      onClick={handleInputClick}
+                      onFocus={handleInputFocus}
                     />
                     {isActive && fieldErrors[field.key] ? (
                       <p className="mt-2 text-sm text-rose-600">{fieldErrors[field.key]}</p>

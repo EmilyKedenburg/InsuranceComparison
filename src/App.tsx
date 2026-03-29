@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { FocusEvent } from 'react'
+import type { FocusEvent, MouseEvent } from 'react'
 import { ComparisonResults } from './components/ComparisonResults'
 import { PlanForm } from './components/PlanForm'
 import { defaultPlans } from './data/defaultPlans'
@@ -12,15 +12,18 @@ const maximumPlanCount = 4
 const initialPlans = structuredClone(defaultPlans.slice(0, minimumPlanCount))
 type PlanViewMode = 'grid' | 'scroll' | 'condensed'
 
-function handleZeroPrefilledNumberFocus(event: FocusEvent<HTMLInputElement>) {
-  if (Number(event.target.value) === 0) {
-    event.target.select()
-  }
+function handleInputFocus(event: FocusEvent<HTMLInputElement>) {
+  event.target.select()
+}
+
+function handleInputClick(event: MouseEvent<HTMLInputElement>) {
+  event.currentTarget.select()
 }
 
 export default function App() {
   const [plans, setPlans] = useState<InsurancePlan[]>(initialPlans)
   const [annualMedicalSpend, setAnnualMedicalSpend] = useState(5000)
+  const [annualMedicalSpendDraft, setAnnualMedicalSpendDraft] = useState<string | null>(null)
   const [coverageType, setCoverageType] = useState<CoverageType>('individual')
   const [planViewMode, setPlanViewMode] = useState<PlanViewMode>('scroll')
 
@@ -110,13 +113,20 @@ export default function App() {
               min="0"
               step="100"
               type="number"
-              value={annualMedicalSpend}
-              onChange={(event) =>
-                setAnnualMedicalSpend(
-                  event.target.value === '' ? 0 : Number(event.target.value),
-                )
-              }
-              onFocus={handleZeroPrefilledNumberFocus}
+              value={annualMedicalSpendDraft ?? annualMedicalSpend}
+              onBlur={(event) => {
+                setAnnualMedicalSpend(event.target.value === '' ? 0 : Number(event.target.value))
+                setAnnualMedicalSpendDraft(null)
+              }}
+              onChange={(event) => {
+                setAnnualMedicalSpendDraft(event.target.value)
+
+                if (event.target.value !== '') {
+                  setAnnualMedicalSpend(Number(event.target.value))
+                }
+              }}
+              onClick={handleInputClick}
+              onFocus={handleInputFocus}
             />
             {spendValidation.fieldErrors.annualMedicalSpend ? (
               <p className="mt-2 text-sm text-rose-600">
@@ -141,6 +151,7 @@ export default function App() {
                       ? 'bg-sky-600 text-white'
                       : 'text-slate-600 hover:bg-slate-100'
                   }`}
+                  tabIndex={-1}
                   type="button"
                   onClick={() => setCoverageType(type)}
                 >
@@ -185,6 +196,7 @@ export default function App() {
                       ? 'bg-sky-600 text-white'
                       : 'text-slate-600 hover:bg-slate-100'
                   }`}
+                  tabIndex={-1}
                   type="button"
                   onClick={() => setPlanViewMode(mode as PlanViewMode)}
                 >
@@ -195,6 +207,7 @@ export default function App() {
             <button
               className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
               disabled={plans.length >= maximumPlanCount}
+              tabIndex={-1}
               type="button"
               onClick={addPlan}
             >
@@ -217,14 +230,14 @@ export default function App() {
                 fieldErrors={validations[index].fieldErrors}
                 isCheaper={index === cheapestPlanIndex}
                 plan={plan}
-              title={`Plan ${index + 1}`}
-              warnings={validations[index].warnings}
-              onChange={(field, value) => updatePlan(index, field, value)}
-              onRemove={
-                plans.length > minimumPlanCount ? () => removePlan(index) : undefined
-              }
-            />
-          ))}
+                title={`Plan ${index + 1}`}
+                warnings={validations[index].warnings}
+                onChange={(field, value) => updatePlan(index, field, value)}
+                onRemove={
+                  plans.length > minimumPlanCount ? () => removePlan(index) : undefined
+                }
+              />
+            ))}
           </div>
         </section>
 

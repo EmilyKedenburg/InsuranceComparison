@@ -134,6 +134,43 @@ describe('App integration', () => {
     expect(contributionInput).toHaveValue(100)
   })
 
+  it('selects the current input value when a user focuses a filled field', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const monthlyPremiumInput = screen.getAllByLabelText('Monthly Premium')[0]
+    await user.click(monthlyPremiumInput)
+    await user.type(monthlyPremiumInput, '4')
+
+    expect(monthlyPremiumInput).toHaveValue(4)
+  })
+
+  it('allows a numeric field to stay empty while active and defaults it back to zero on blur', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const hraInput = screen.getAllByLabelText('HRA Contribution')[0]
+    await user.click(hraInput)
+    await user.clear(hraInput)
+
+    expect(hraInput).toHaveValue(null)
+
+    await user.tab()
+
+    expect(hraInput).toHaveValue(0)
+  })
+
+  it('tabs through input fields without focusing buttons', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.tab()
+    expect(screen.getByLabelText('Annual Medical Spend')).toHaveFocus()
+
+    await user.tab()
+    expect(screen.getAllByLabelText('Plan Name')[0]).toHaveFocus()
+  })
+
   it('applies hsa and hra together in the comparison breakdown', async () => {
     const user = userEvent.setup()
     render(<App />)
