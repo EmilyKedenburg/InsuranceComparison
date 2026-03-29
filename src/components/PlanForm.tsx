@@ -1,9 +1,6 @@
+import { useId, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import type {
-  AccountContributionType,
-  CoverageType,
-  InsurancePlan,
-} from '../types/insurance'
+import type { AccountContributionType, CoverageType, InsurancePlan } from '../types/insurance'
 
 interface PlanFormProps {
   title: string
@@ -68,6 +65,9 @@ export function PlanForm({
   onRemove,
   onChange,
 }: PlanFormProps) {
+  const [showContributionTooltip, setShowContributionTooltip] = useState(false)
+  const tooltipId = useId()
+
   const handleTextChange = (event: ChangeEvent<HTMLInputElement>) => {
     onChange(event.target.name as keyof InsurancePlan, event.target.value)
   }
@@ -77,15 +77,12 @@ export function PlanForm({
     onChange(name as keyof InsurancePlan, value === '' ? 0 : Number(value))
   }
 
-  const handleSelectChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    onChange(
-      event.target.name as keyof InsurancePlan,
-      event.target.value as AccountContributionType,
-    )
-  }
-
   const contributionLabel =
     plan.accountContributionType === 'hra' ? 'HRA Contribution' : 'HSA Contribution'
+  const contributionTooltip =
+    plan.accountContributionType === 'hra'
+      ? 'HRA: employer-funded reimbursement money that is controlled by the employer.'
+      : 'HSA: money deposited into a health savings account that the employee owns.'
 
   return (
     <section
@@ -165,26 +162,71 @@ export function PlanForm({
           </label>
         ))}
 
-        <label>
-          <span className="mb-2 block text-sm font-medium text-slate-700">
-            Account Contribution Type
-          </span>
-          <select
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500"
-            name="accountContributionType"
-            value={plan.accountContributionType}
-            onChange={handleSelectChange}
-          >
-            <option value="hsa">HSA</option>
-            <option value="hra">HRA</option>
-          </select>
-        </label>
+        <div>
+          <div className="relative mb-2 h-5">
+            <div className="flex items-center gap-2 pr-24">
+              <span className="text-sm font-medium leading-5 text-slate-700">
+                {contributionLabel}
+              </span>
+              <div className="relative">
+                <button
+                  aria-describedby={showContributionTooltip ? tooltipId : undefined}
+                  aria-expanded={showContributionTooltip}
+                  aria-label={`${contributionLabel} help`}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-sky-200 bg-sky-50 text-[11px] font-semibold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 focus:border-sky-400 focus:bg-sky-100 focus:outline-none"
+                  type="button"
+                  onBlur={() => setShowContributionTooltip(false)}
+                  onFocus={() => setShowContributionTooltip(true)}
+                  onMouseEnter={() => setShowContributionTooltip(true)}
+                  onMouseLeave={() => setShowContributionTooltip(false)}
+                >
+                  i
+                </button>
+                <div
+                  aria-hidden={!showContributionTooltip}
+                  aria-live="polite"
+                  className={`absolute bottom-full left-1/2 z-10 mb-3 w-64 -translate-x-1/2 rounded-2xl border border-sky-100 bg-sky-50/95 px-3 py-2 text-xs leading-5 text-slate-700 shadow-lg shadow-slate-200/50 backdrop-blur transition-opacity duration-150 ease-out ${
+                    showContributionTooltip
+                      ? 'pointer-events-auto opacity-100'
+                      : 'pointer-events-none opacity-0'
+                  }`}
+                  id={tooltipId}
+                  role={showContributionTooltip ? 'tooltip' : undefined}
+                >
+                  {contributionTooltip}
+                  <span className="absolute left-1/2 top-full h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-sky-100 bg-sky-50/95" />
+                </div>
+              </div>
+            </div>
+            <div
+              aria-label="Account contribution type"
+              className="absolute right-0 top-1/2 inline-flex -translate-y-1/2 rounded-full border border-slate-200 bg-slate-100 p-0.5 shadow-sm"
+              role="group"
+            >
+              {(['hsa', 'hra'] as AccountContributionType[]).map((type) => {
+                const isSelected = plan.accountContributionType === type
 
-        <label>
-          <span className="mb-2 block text-sm font-medium text-slate-700">
-            {contributionLabel}
-          </span>
+                return (
+                  <button
+                    key={type}
+                    aria-pressed={isSelected}
+                    className={`rounded-full px-3 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
+                      isSelected
+                        ? 'bg-sky-600 text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-white hover:text-slate-900'
+                    }`}
+                    type="button"
+                    onClick={() => onChange('accountContributionType', type)}
+                  >
+                    {type}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           <input
+            aria-label={contributionLabel}
             aria-invalid={Boolean(fieldErrors.hsaHraContribution)}
             className={`w-full rounded-2xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 ${
               fieldErrors.hsaHraContribution
@@ -201,7 +243,7 @@ export function PlanForm({
           {fieldErrors.hsaHraContribution ? (
             <p className="mt-2 text-sm text-rose-600">{fieldErrors.hsaHraContribution}</p>
           ) : null}
-        </label>
+        </div>
 
         {coverageFieldGroups.map((group) => {
           const isActive = coverageType === group.coverageType

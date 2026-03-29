@@ -115,14 +115,40 @@ describe('App integration', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    const typeSelects = screen.getAllByLabelText('Account Contribution Type')
-    await user.selectOptions(typeSelects[0], 'hra')
+    const ppoFormSection = getPlanFormSection('PPO Plan')
+    await user.click(within(ppoFormSection).getByRole('button', { name: 'hra' }))
 
     expect(screen.getAllByLabelText('HRA Contribution')).toHaveLength(1)
     expect(screen.getAllByLabelText('HSA Contribution')).toHaveLength(1)
-
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     expect(within(ppoSummaryCard).getByText('HRA contribution: -$0')).toBeInTheDocument()
+  })
+
+  it('shows a styled tooltip with hsa or hra specific help text', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const ppoFormSection = getPlanFormSection('PPO Plan')
+    const hsaHelpButton = within(ppoFormSection).getByRole('button', {
+      name: 'HSA Contribution help',
+    })
+
+    await user.hover(hsaHelpButton)
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      'HSA: money deposited into a health savings account that the employee owns.',
+    )
+
+    await user.unhover(hsaHelpButton)
+    await user.click(within(ppoFormSection).getByRole('button', { name: 'hra' }))
+
+    const hraHelpButton = within(ppoFormSection).getByRole('button', {
+      name: 'HRA Contribution help',
+    })
+    await user.hover(hraHelpButton)
+
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      'HRA: employer-funded reimbursement money that is controlled by the employer.',
+    )
   })
 
   it('disables family deductible and oop fields during individual coverage', () => {

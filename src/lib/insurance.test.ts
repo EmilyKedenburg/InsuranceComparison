@@ -286,8 +286,8 @@ describe('calculateAnnualCost', () => {
       medicalSpendInput: 100.05,
       premiumCost: 1481.47,
       medicalCostPaid: 100.03,
-      employerContribution: 10.01,
       hsaHraContribution: 5.01,
+      employerContribution: 10.01,
       totalContribution: 15.02,
       totalAnnualCost: 1566.48,
     })
