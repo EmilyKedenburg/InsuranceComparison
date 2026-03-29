@@ -11,8 +11,8 @@ const basePlan: InsurancePlan = {
   individualOutOfPocketMax: 5000,
   familyOutOfPocketMax: 10000,
   employerContribution: 1200,
-  accountContributionType: 'hsa',
-  hsaHraContribution: 0,
+  hsaContribution: 0,
+  hraContribution: 0,
 }
 
 describe('validatePlan', () => {
@@ -50,14 +50,36 @@ describe('validatePlan', () => {
     )
   })
 
-  it('errors when hsa or hra contribution is negative', () => {
+  it('errors when hsa contribution is negative', () => {
     const result = validatePlan({
       ...basePlan,
-      hsaHraContribution: -50,
+      hsaContribution: -50,
     })
 
-    expect(result.fieldErrors.hsaHraContribution).toBe(
-      'HSA/HRA contribution cannot be negative.',
+    expect(result.fieldErrors.hsaContribution).toBe(
+      'HSA contribution cannot be negative.',
     )
+  })
+
+  it('errors when hra contribution is negative', () => {
+    const result = validatePlan({
+      ...basePlan,
+      hraContribution: -50,
+    })
+
+    expect(result.fieldErrors.hraContribution).toBe(
+      'HRA contribution cannot be negative.',
+    )
+  })
+
+  it('allows both hsa and hra contribution fields to be populated without validation errors', () => {
+    const result = validatePlan({
+      ...basePlan,
+      hsaContribution: 500,
+      hraContribution: 300,
+    })
+
+    expect(result.fieldErrors.hsaContribution).toBeUndefined()
+    expect(result.fieldErrors.hraContribution).toBeUndefined()
   })
 })

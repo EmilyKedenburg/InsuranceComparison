@@ -10,8 +10,8 @@ export const defaultPlans: InsurancePlan[] = [
     individualOutOfPocketMax: 5000,
     familyOutOfPocketMax: 10000,
     employerContribution: 1000,
-    accountContributionType: 'hsa',
-    hsaHraContribution: 0,
+    hsaContribution: 0,
+    hraContribution: 0,
   },
   {
     name: 'HDHP Plan',
@@ -22,8 +22,8 @@ export const defaultPlans: InsurancePlan[] = [
     individualOutOfPocketMax: 6500,
     familyOutOfPocketMax: 13000,
     employerContribution: 1800,
-    accountContributionType: 'hsa',
-    hsaHraContribution: 0,
+    hsaContribution: 0,
+    hraContribution: 0,
   },
   {
     name: 'EPO Plan',
@@ -34,8 +34,8 @@ export const defaultPlans: InsurancePlan[] = [
     individualOutOfPocketMax: 5800,
     familyOutOfPocketMax: 11600,
     employerContribution: 900,
-    accountContributionType: 'hsa',
-    hsaHraContribution: 0,
+    hsaContribution: 0,
+    hraContribution: 0,
   },
   {
     name: 'Copay Plan',
@@ -46,7 +46,7 @@ export const defaultPlans: InsurancePlan[] = [
     individualOutOfPocketMax: 4500,
     familyOutOfPocketMax: 9000,
     employerContribution: 700,
-    accountContributionType: 'hsa',
-    hsaHraContribution: 0,
+    hsaContribution: 0,
+    hraContribution: 0,
   },
 ]

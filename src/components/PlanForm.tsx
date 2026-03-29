@@ -1,6 +1,6 @@
 import { useId, useState } from 'react'
-import type { ChangeEvent } from 'react'
-import type { AccountContributionType, CoverageType, InsurancePlan } from '../types/insurance'
+import type { ChangeEvent, FocusEvent } from 'react'
+import type { CoverageType, InsurancePlan } from '../types/insurance'
 
 interface PlanFormProps {
   title: string
@@ -8,6 +8,7 @@ interface PlanFormProps {
   isCheaper: boolean
   coverageType: CoverageType
   compact?: boolean
+  condensedFourUp?: boolean
   fieldErrors?: Partial<Record<keyof InsurancePlan, string>>
   warnings?: string[]
   onRemove?: () => void
@@ -60,13 +61,15 @@ export function PlanForm({
   isCheaper,
   coverageType,
   compact = false,
+  condensedFourUp = false,
   fieldErrors = {},
   warnings = [],
   onRemove,
   onChange,
 }: PlanFormProps) {
-  const [showContributionTooltip, setShowContributionTooltip] = useState(false)
-  const tooltipId = useId()
+  const [activeTooltip, setActiveTooltip] = useState<'hsa' | 'hra' | null>(null)
+  const hsaTooltipId = useId()
+  const hraTooltipId = useId()
 
   const handleTextChange = (event: ChangeEvent<HTMLInputElement>) => {
     onChange(event.target.name as keyof InsurancePlan, event.target.value)
@@ -77,16 +80,59 @@ export function PlanForm({
     onChange(name as keyof InsurancePlan, value === '' ? 0 : Number(value))
   }
 
-  const contributionLabel =
-    plan.accountContributionType === 'hra' ? 'HRA Contribution' : 'HSA Contribution'
-  const contributionTooltip =
-    plan.accountContributionType === 'hra'
-      ? 'HRA: employer-funded reimbursement money that is controlled by the employer.'
-      : 'HSA: money deposited into a health savings account that the employee owns.'
+  const handleNumberFocus = (event: FocusEvent<HTMLInputElement>) => {
+    if (Number(event.target.value) === 0) {
+      event.target.select()
+    }
+  }
+
+  const contributionTooltips = {
+    hsa: 'HSA: money deposited into a health savings account that the employee owns.',
+    hra: 'HRA: employer-funded reimbursement money that is controlled by the employer.',
+  }
+
+  const renderTooltipButton = (
+    label: string,
+    tooltipKey: 'hsa' | 'hra',
+    tooltipId: string,
+    compactButton = false,
+  ) => (
+    <div className="relative shrink-0">
+      <button
+        aria-describedby={activeTooltip === tooltipKey ? tooltipId : undefined}
+        aria-expanded={activeTooltip === tooltipKey}
+        aria-label={`${label} help`}
+        className={`inline-flex shrink-0 items-center justify-center rounded-full border border-sky-200 bg-sky-50 font-semibold leading-none text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 focus:border-sky-400 focus:bg-sky-100 focus:outline-none ${
+          compactButton ? 'h-4 w-4 text-[10px]' : 'h-5 w-5 text-[11px]'
+        }`}
+        type="button"
+        onBlur={() => setActiveTooltip(null)}
+        onFocus={() => setActiveTooltip(tooltipKey)}
+        onMouseEnter={() => setActiveTooltip(tooltipKey)}
+        onMouseLeave={() => setActiveTooltip(null)}
+      >
+        i
+      </button>
+      <div
+        aria-hidden={activeTooltip !== tooltipKey}
+        aria-live="polite"
+        className={`absolute bottom-full left-1/2 z-10 mb-3 w-64 -translate-x-1/2 rounded-2xl border border-sky-100 bg-sky-50/95 px-3 py-2 text-xs leading-5 text-slate-700 shadow-lg shadow-slate-200/50 backdrop-blur transition-opacity duration-150 ease-out ${
+          activeTooltip === tooltipKey
+            ? 'pointer-events-auto opacity-100'
+            : 'pointer-events-none opacity-0'
+        }`}
+        id={tooltipId}
+        role={activeTooltip === tooltipKey ? 'tooltip' : undefined}
+      >
+        {contributionTooltips[tooltipKey]}
+        <span className="absolute left-1/2 top-full h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-sky-100 bg-sky-50/95" />
+      </div>
+    </div>
+  )
 
   return (
     <section
-      className={`rounded-3xl border p-6 shadow-sm transition ${
+      className={`min-w-0 rounded-3xl border p-6 shadow-sm transition ${
         isCheaper
           ? 'border-emerald-400 bg-emerald-50/80'
           : 'border-slate-200 bg-white/80'
@@ -99,12 +145,11 @@ export function PlanForm({
           </p>
           <h2 className="text-xl font-semibold text-slate-900">{plan.name}</h2>
         </div>
-        <div className="flex items-center gap-2">
-          {isCheaper ? (
-            <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">
-              Lower Total Cost
-            </span>
-          ) : null}
+        <div
+          className={`flex gap-2 ${
+            compact ? 'flex-col items-end' : 'items-center'
+          }`}
+        >
           {onRemove ? (
             <button
               className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
@@ -114,11 +159,26 @@ export function PlanForm({
               Remove Plan
             </button>
           ) : null}
+          {compact ? (
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                isCheaper
+                  ? 'bg-emerald-600 text-white'
+                  : 'invisible'
+              }`}
+            >
+              Lower Total Cost
+            </span>
+          ) : isCheaper ? (
+            <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">
+              Lower Total Cost
+            </span>
+          ) : null}
         </div>
       </div>
 
       <div className={`grid gap-4 ${compact ? '' : 'sm:grid-cols-2'}`}>
-        <label className="sm:col-span-2">
+        <label className="min-w-0 sm:col-span-2">
           <span className="mb-2 block text-sm font-medium text-slate-700">
             Plan Name
           </span>
@@ -138,7 +198,7 @@ export function PlanForm({
         </label>
 
         {numericFields.map((field) => (
-          <label key={field.key}>
+          <label key={field.key} className="min-w-0">
             <span className="mb-2 block text-sm font-medium text-slate-700">
               {field.label}
             </span>
@@ -155,6 +215,7 @@ export function PlanForm({
               type="number"
               value={plan[field.key]}
               onChange={handleNumberChange}
+              onFocus={handleNumberFocus}
             />
             {fieldErrors[field.key] ? (
               <p className="mt-2 text-sm text-rose-600">{fieldErrors[field.key]}</p>
@@ -162,87 +223,62 @@ export function PlanForm({
           </label>
         ))}
 
-        <div>
-          <div className="relative mb-2 h-5">
-            <div className="flex items-center gap-2 pr-24">
-              <span className="text-sm font-medium leading-5 text-slate-700">
-                {contributionLabel}
-              </span>
-              <div className="relative">
-                <button
-                  aria-describedby={showContributionTooltip ? tooltipId : undefined}
-                  aria-expanded={showContributionTooltip}
-                  aria-label={`${contributionLabel} help`}
-                  className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-sky-200 bg-sky-50 text-[11px] font-semibold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 focus:border-sky-400 focus:bg-sky-100 focus:outline-none"
-                  type="button"
-                  onBlur={() => setShowContributionTooltip(false)}
-                  onFocus={() => setShowContributionTooltip(true)}
-                  onMouseEnter={() => setShowContributionTooltip(true)}
-                  onMouseLeave={() => setShowContributionTooltip(false)}
-                >
-                  i
-                </button>
+        <div className={`min-w-0 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 ${compact ? '' : 'sm:col-span-2'}`}>
+          <div className={`grid gap-4 ${compact ? '' : 'sm:grid-cols-2'}`}>
+            {([
+              ['hsaContribution', 'HSA Contribution', 'hsa', hsaTooltipId],
+              ['hraContribution', 'HRA Contribution', 'hra', hraTooltipId],
+            ] as const).map(([key, label, tooltipKey, tooltipId]) => (
+              <label key={key} className="min-w-0">
                 <div
-                  aria-hidden={!showContributionTooltip}
-                  aria-live="polite"
-                  className={`absolute bottom-full left-1/2 z-10 mb-3 w-64 -translate-x-1/2 rounded-2xl border border-sky-100 bg-sky-50/95 px-3 py-2 text-xs leading-5 text-slate-700 shadow-lg shadow-slate-200/50 backdrop-blur transition-opacity duration-150 ease-out ${
-                    showContributionTooltip
-                      ? 'pointer-events-auto opacity-100'
-                      : 'pointer-events-none opacity-0'
+                  className={`relative mb-2 min-h-5 ${
+                    condensedFourUp
+                      ? 'flex flex-col items-start'
+                      : 'flex items-center gap-1.5'
                   }`}
-                  id={tooltipId}
-                  role={showContributionTooltip ? 'tooltip' : undefined}
                 >
-                  {contributionTooltip}
-                  <span className="absolute left-1/2 top-full h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-sky-100 bg-sky-50/95" />
+                  {condensedFourUp ? (
+                    <div className="flex flex-col items-start text-sm font-medium text-slate-700">
+                      <span className="inline-flex items-center gap-1 leading-4">
+                        <span>{label.split(' ')[0]}</span>
+                        {renderTooltipButton(label, tooltipKey, tooltipId, true)}
+                      </span>
+                      <span className="leading-4">{label.split(' ').slice(1).join(' ')}</span>
+                    </div>
+                  ) : (
+                    <span className="text-sm font-medium leading-5 text-slate-700">
+                      {label}
+                    </span>
+                  )}
+                  {!condensedFourUp ? (
+                    renderTooltipButton(label, tooltipKey, tooltipId, compact)
+                  ) : null}
                 </div>
-              </div>
-            </div>
-            <div
-              aria-label="Account contribution type"
-              className="absolute right-0 top-1/2 inline-flex -translate-y-1/2 rounded-full border border-slate-200 bg-slate-100 p-0.5 shadow-sm"
-              role="group"
-            >
-              {(['hsa', 'hra'] as AccountContributionType[]).map((type) => {
-                const isSelected = plan.accountContributionType === type
-
-                return (
-                  <button
-                    key={type}
-                    aria-pressed={isSelected}
-                    className={`rounded-full px-3 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
-                      isSelected
-                        ? 'bg-sky-600 text-white shadow-sm'
-                        : 'text-slate-600 hover:bg-white hover:text-slate-900'
-                    }`}
-                    type="button"
-                    onClick={() => onChange('accountContributionType', type)}
-                  >
-                    {type}
-                  </button>
-                )
-              })}
-            </div>
+                <input
+                  aria-label={label}
+                  aria-invalid={Boolean(fieldErrors[key])}
+                  className={`w-full rounded-2xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 ${
+                    fieldErrors[key]
+                      ? 'border-rose-400 bg-rose-50'
+                      : 'border-slate-200'
+                  }`}
+                  min="0"
+                  name={key}
+                  step="0.01"
+                  type="number"
+                  value={plan[key]}
+                  onChange={handleNumberChange}
+                  onFocus={handleNumberFocus}
+                />
+                {fieldErrors[key] ? (
+                  <p className="mt-2 text-sm text-rose-600">{fieldErrors[key]}</p>
+                ) : null}
+              </label>
+            ))}
           </div>
-
-          <input
-            aria-label={contributionLabel}
-            aria-invalid={Boolean(fieldErrors.hsaHraContribution)}
-            className={`w-full rounded-2xl border bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-sky-500 ${
-              fieldErrors.hsaHraContribution
-                ? 'border-rose-400 bg-rose-50'
-                : 'border-slate-200'
-            }`}
-            min="0"
-            name="hsaHraContribution"
-            step="0.01"
-            type="number"
-            value={plan.hsaHraContribution}
-            onChange={handleNumberChange}
-          />
-          {fieldErrors.hsaHraContribution ? (
-            <p className="mt-2 text-sm text-rose-600">{fieldErrors.hsaHraContribution}</p>
-          ) : null}
+          <p className="mt-3 text-xs leading-5 text-slate-500">
+            Note: Some plans do not allow both HSA and HRA simultaneously.
+          </p>
         </div>
 
         {coverageFieldGroups.map((group) => {
@@ -251,22 +287,22 @@ export function PlanForm({
           return (
             <div
               key={group.title}
-              className={`rounded-2xl border p-4 ${compact ? '' : 'sm:col-span-2'} ${
+              className={`min-w-0 rounded-2xl border p-4 ${compact ? '' : 'sm:col-span-2'} ${
                 isActive
                   ? 'border-sky-200 bg-sky-50/70'
                   : 'border-slate-200 bg-slate-50 text-slate-400'
               }`}
             >
               <p
-                className={`mb-3 text-sm font-semibold uppercase tracking-[0.16em] ${
-                  isActive ? 'text-sky-700' : 'text-slate-400'
-                }`}
+                className={`mb-3 font-semibold uppercase ${
+                  compact ? 'text-xs tracking-[0.12em]' : 'text-sm tracking-[0.16em]'
+                } ${isActive ? 'text-sky-700' : 'text-slate-400'}`}
               >
                 {group.title}
               </p>
               <div className={`grid gap-4 ${compact ? '' : 'sm:grid-cols-2'}`}>
                 {group.fields.map((field) => (
-                  <label key={field.key}>
+                  <label key={field.key} className="min-w-0">
                     <span
                       className={`mb-2 block text-sm font-medium ${
                         isActive ? 'text-slate-700' : 'text-slate-400'
@@ -290,6 +326,7 @@ export function PlanForm({
                       type="number"
                       value={plan[field.key]}
                       onChange={handleNumberChange}
+                      onFocus={handleNumberFocus}
                     />
                     {isActive && fieldErrors[field.key] ? (
                       <p className="mt-2 text-sm text-rose-600">{fieldErrors[field.key]}</p>

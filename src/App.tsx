@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { FocusEvent } from 'react'
 import { ComparisonResults } from './components/ComparisonResults'
 import { PlanForm } from './components/PlanForm'
 import { defaultPlans } from './data/defaultPlans'
@@ -10,6 +11,12 @@ const minimumPlanCount = 2
 const maximumPlanCount = 4
 const initialPlans = structuredClone(defaultPlans.slice(0, minimumPlanCount))
 type PlanViewMode = 'grid' | 'scroll' | 'condensed'
+
+function handleZeroPrefilledNumberFocus(event: FocusEvent<HTMLInputElement>) {
+  if (Number(event.target.value) === 0) {
+    event.target.select()
+  }
+}
 
 export default function App() {
   const [plans, setPlans] = useState<InsurancePlan[]>(initialPlans)
@@ -57,14 +64,20 @@ export default function App() {
     validations.some((validation) => validation.errors.length > 0) ||
     spendValidation.errors.length > 0
   const compactView = planViewMode === 'condensed'
+  const condensedPlanLayoutStyle =
+    planViewMode === 'condensed'
+      ? { gridTemplateColumns: `repeat(${plans.length}, minmax(0, 1fr))` }
+      : undefined
   const planLayoutClass =
     planViewMode === 'grid'
       ? 'grid gap-6 md:grid-cols-2'
       : planViewMode === 'condensed'
-        ? 'grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-4'
+        ? 'grid gap-4'
         : 'grid min-w-max grid-flow-col gap-6'
   const planLayoutStyle =
-    planViewMode === 'scroll' ? { gridAutoColumns: 'minmax(22rem, 1fr)' } : undefined
+    planViewMode === 'scroll'
+      ? { gridAutoColumns: 'minmax(22rem, 1fr)' }
+      : condensedPlanLayoutStyle
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#e0f2fe,_#f8fafc_50%,_#e2e8f0)] px-4 py-10 text-slate-900">
@@ -103,6 +116,7 @@ export default function App() {
                   event.target.value === '' ? 0 : Number(event.target.value),
                 )
               }
+              onFocus={handleZeroPrefilledNumberFocus}
             />
             {spendValidation.fieldErrors.annualMedicalSpend ? (
               <p className="mt-2 text-sm text-rose-600">
@@ -199,6 +213,7 @@ export default function App() {
                 key={`${plan.name}-${index}`}
                 coverageType={coverageType}
                 compact={compactView}
+                condensedFourUp={planViewMode === 'condensed' && plans.length === 4}
                 fieldErrors={validations[index].fieldErrors}
                 isCheaper={index === cheapestPlanIndex}
                 plan={plan}

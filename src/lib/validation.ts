@@ -21,7 +21,7 @@ export function validatePlan(plan: InsurancePlan): ValidationResult {
   }
 
   const numericChecks: Array<{
-    key: Exclude<keyof InsurancePlan, 'name' | 'coinsurance' | 'accountContributionType'>
+    key: Exclude<keyof InsurancePlan, 'name' | 'coinsurance'>
     label: string
   }> = [
     { key: 'monthlyPremium', label: 'Monthly premium' },
@@ -30,7 +30,8 @@ export function validatePlan(plan: InsurancePlan): ValidationResult {
     { key: 'individualOutOfPocketMax', label: 'Individual out-of-pocket max' },
     { key: 'familyOutOfPocketMax', label: 'Family out-of-pocket max' },
     { key: 'employerContribution', label: 'Employer contribution' },
-    { key: 'hsaHraContribution', label: 'HSA/HRA contribution' },
+    { key: 'hsaContribution', label: 'HSA contribution' },
+    { key: 'hraContribution', label: 'HRA contribution' },
   ]
 
   for (const check of numericChecks) {

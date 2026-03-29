@@ -108,20 +108,49 @@ describe('App integration', () => {
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     expect(within(ppoSummaryCard).getByText('$4,540')).toBeInTheDocument()
     expect(within(ppoSummaryCard).getByText('HSA contribution: -$500')).toBeInTheDocument()
-    expect(within(ppoSummaryCard).getByText('Total contributions: -$1,500')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('Adjusted medical cost: $1,700')).toBeInTheDocument()
   })
 
-  it('lets a user switch a plan between hsa and hra contribution types', async () => {
+  it('updates totals when hra contribution changes', async () => {
     const user = userEvent.setup()
     render(<App />)
 
-    const ppoFormSection = getPlanFormSection('PPO Plan')
-    await user.click(within(ppoFormSection).getByRole('button', { name: 'hra' }))
-
-    expect(screen.getAllByLabelText('HRA Contribution')).toHaveLength(1)
-    expect(screen.getAllByLabelText('HSA Contribution')).toHaveLength(1)
+    const contributionInputs = screen.getAllByLabelText('HRA Contribution')
+    await user.clear(contributionInputs[0])
+    await user.type(contributionInputs[0], '400')
     const ppoSummaryCard = getSummaryCard('PPO Plan')
-    expect(within(ppoSummaryCard).getByText('HRA contribution: -$0')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('HRA contribution: -$400')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('Adjusted medical cost: $1,800')).toBeInTheDocument()
+  })
+
+  it('replaces a prefilled zero when typing into a numeric field', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const contributionInput = screen.getAllByLabelText('HSA Contribution')[0]
+    await user.click(contributionInput)
+    await user.type(contributionInput, '100')
+
+    expect(contributionInput).toHaveValue(100)
+  })
+
+  it('applies hsa and hra together in the comparison breakdown', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const hsaInputs = screen.getAllByLabelText('HSA Contribution')
+    await user.clear(hsaInputs[0])
+    await user.type(hsaInputs[0], '500')
+
+    const hraInputs = screen.getAllByLabelText('HRA Contribution')
+    await user.clear(hraInputs[0])
+    await user.type(hraInputs[0], '300')
+
+    const ppoSummaryCard = getSummaryCard('PPO Plan')
+    expect(within(ppoSummaryCard).getByText('HSA contribution: -$500')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('HRA contribution: -$300')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('Adjusted medical cost: $1,400')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$4,240')).toBeInTheDocument()
   })
 
   it('shows a styled tooltip with hsa or hra specific help text', async () => {
@@ -139,8 +168,6 @@ describe('App integration', () => {
     )
 
     await user.unhover(hsaHelpButton)
-    await user.click(within(ppoFormSection).getByRole('button', { name: 'hra' }))
-
     const hraHelpButton = within(ppoFormSection).getByRole('button', {
       name: 'HRA Contribution help',
     })
@@ -205,6 +232,24 @@ describe('App integration', () => {
     await user.click(scrollButton)
     expect(scrollButton).toHaveAttribute('aria-pressed', 'true')
     expect(planLayout.className).toContain('overflow-x-auto')
+  })
+
+  it('sizes condensed view columns evenly based on the current plan count', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const condensedButton = screen.getByRole('button', { name: 'Condensed' })
+    const planLayout = screen.getByTestId('plan-layout').firstElementChild as HTMLElement
+
+    await user.click(condensedButton)
+    expect(planLayout.style.gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))')
+
+    const addPlanButton = screen.getByRole('button', { name: 'Add Plan' })
+    await user.click(addPlanButton)
+    expect(planLayout.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))')
+
+    await user.click(addPlanButton)
+    expect(planLayout.style.gridTemplateColumns).toBe('repeat(4, minmax(0, 1fr))')
   })
 
   it('allows adding up to four plans and disables adding beyond that', async () => {

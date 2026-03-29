@@ -64,12 +64,10 @@ function SummaryCard({
       <div className="mt-5 space-y-2 text-sm text-slate-600">
         <p>Annual premium: {formatCurrency(result.premiumCost)}</p>
         <p>Medical cost paid: {formatCurrency(result.medicalCostPaid)}</p>
+        <p>HSA contribution: -{formatCurrency(result.hsaContribution)}</p>
+        <p>HRA contribution: -{formatCurrency(result.hraContribution)}</p>
+        <p>Adjusted medical cost: {formatCurrency(result.adjustedMedicalCost)}</p>
         <p>Employer contribution: -{formatCurrency(result.employerContribution)}</p>
-        <p>
-          {plan.accountContributionType.toUpperCase()} contribution: -
-          {formatCurrency(result.hsaHraContribution)}
-        </p>
-        <p>Total contributions: -{formatCurrency(result.totalContribution)}</p>
       </div>
     </article>
   )
@@ -95,10 +93,14 @@ export function ComparisonResults({
     viewMode === 'grid'
       ? 'grid gap-4 md:grid-cols-2'
       : viewMode === 'condensed'
-        ? 'grid grid-cols-2 gap-4 xl:grid-cols-4'
+        ? 'grid gap-4'
         : 'grid min-w-max grid-flow-col gap-4'
   const containerStyle =
-    viewMode === 'scroll' ? { gridAutoColumns: 'minmax(18rem, 1fr)' } : undefined
+    viewMode === 'scroll'
+      ? { gridAutoColumns: 'minmax(18rem, 1fr)' }
+      : viewMode === 'condensed'
+        ? { gridTemplateColumns: `repeat(${plans.length}, minmax(0, 1fr))` }
+        : undefined
 
   return (
     <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
