@@ -34,7 +34,7 @@ describe('App integration', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    const spendInput = screen.getByLabelText('Annual Medical Spend')
+    const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
     await user.clear(spendInput)
     await user.type(spendInput, '0')
 
@@ -48,6 +48,117 @@ describe('App integration', () => {
     ).toBeInTheDocument()
   })
 
+  it('keeps the estimated annual medical spend input synced with the slider', () => {
+    render(<App />)
+
+    const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
+    const spendSlider = screen.getByLabelText('Estimated Annual Medical Spend Slider')
+
+    fireEvent.change(spendSlider, { target: { value: '0' } })
+
+    expect(spendInput).toHaveValue(0)
+
+    const ppoSummaryCard = getSummaryCard('PPO Plan')
+    expect(within(ppoSummaryCard).getByText('$2,840')).toBeInTheDocument()
+  })
+
+  it('clicking Healthy sets annual medical spend to 500', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /Healthy:/ }))
+
+    expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveValue(500)
+  })
+
+  it('clicking Moderate sets annual medical spend to 5000', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /Moderate:/ }))
+
+    expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveValue(5000)
+  })
+
+  it('clicking Worst Case sets annual medical spend to 50000', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /Worst Case:/ }))
+
+    expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveValue(50000)
+  })
+
+  it('uses family preset values after switching coverage type', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'family' }))
+    await user.click(screen.getByRole('button', { name: /Healthy:/ }))
+    expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveValue(1500)
+
+    await user.click(screen.getByRole('button', { name: /Moderate:/ }))
+    expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveValue(12000)
+
+    await user.click(screen.getByRole('button', { name: /Worst Case:/ }))
+    expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveValue(50000)
+  })
+
+  it('updates displayed total costs after clicking a preset', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /Healthy:/ }))
+
+    const ppoSummaryCard = getSummaryCard('PPO Plan')
+    const hdhpSummaryCard = getSummaryCard('HDHP Plan')
+
+    expect(within(ppoSummaryCard).getByText('$3,340')).toBeInTheDocument()
+    expect(within(hdhpSummaryCard).getByText('$920')).toBeInTheDocument()
+  })
+
+  it('highlights the selected preset and clears it after manual spend entry', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const healthyPreset = screen.getByRole('button', { name: /Healthy:/ })
+    const moderatePreset = screen.getByRole('button', { name: /Moderate:/ })
+    const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
+
+    expect(moderatePreset).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(healthyPreset)
+    expect(healthyPreset).toHaveAttribute('aria-pressed', 'true')
+    expect(moderatePreset).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(spendInput)
+    await user.type(spendInput, '750')
+    expect(healthyPreset).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('shows a styled tooltip for spend presets', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    const healthyPreset = screen.getByRole('button', { name: /Healthy:/ })
+    await user.hover(healthyPreset)
+
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Preventative care only.')
+  })
+
+  it('shows family-appropriate preset tooltip text in family mode', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'family' }))
+    const healthyPreset = screen.getByRole('button', { name: /Healthy:/ })
+    await user.hover(healthyPreset)
+
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      'Preventative care and routine family visits.',
+    )
+  })
+
   it('uses family coverage thresholds when family coverage is selected', async () => {
     const user = userEvent.setup()
     render(<App />)
@@ -57,8 +168,8 @@ describe('App integration', () => {
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     const hdhpSummaryCard = getSummaryCard('HDHP Plan')
 
-    expect(within(ppoSummaryCard).getByText('$6,240')).toBeInTheDocument()
-    expect(within(hdhpSummaryCard).getByText('$5,420')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$7,640')).toBeInTheDocument()
+    expect(within(hdhpSummaryCard).getByText('$7,380')).toBeInTheDocument()
     expect(screen.getByText('family coverage selected')).toBeInTheDocument()
   })
 
@@ -165,7 +276,7 @@ describe('App integration', () => {
     render(<App />)
 
     await user.tab()
-    expect(screen.getByLabelText('Annual Medical Spend')).toHaveFocus()
+    expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveFocus()
 
     await user.tab()
     expect(screen.getAllByLabelText('Plan Name')[0]).toHaveFocus()
@@ -321,7 +432,7 @@ describe('App integration', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    const spendInput = screen.getByLabelText('Annual Medical Spend')
+    const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
     fireEvent.change(spendInput, { target: { value: '-50' } })
 
     const planNameInputs = screen.getAllByLabelText('Plan Name')
