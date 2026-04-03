@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
 function getPlanFormSection(headingName: string) {
@@ -28,6 +28,10 @@ function getSummaryCard(headingName: string) {
 
   return article
 }
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('App integration', () => {
   it('updates totals when annual medical spend changes', async () => {
@@ -102,6 +106,223 @@ describe('App integration', () => {
 
     await user.click(screen.getByRole('button', { name: /Worst Case:/ }))
     expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveValue(50000)
+  })
+
+  it('interprets a plain-English scenario and applies the structured spend through the calculator', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scenarioType: 'maternity',
+        estimatedAnnualMedicalSpend: 14000,
+        assumptions: ['Pregnancy care', 'Delivery costs', 'Routine labs'],
+        confidence: 0.82,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(
+      screen.getByLabelText('Scenario Description'),
+      'We are planning for pregnancy care, delivery, and regular follow-up visits.',
+    )
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/ai-scenario',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    const postedPayload = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(postedPayload.userInput).toBe(
+      'We are planning for pregnancy care, delivery, and regular follow-up visits.',
+    )
+    expect(postedPayload.coverageType).toBe('individual')
+    expect(postedPayload.plans).toHaveLength(2)
+
+    expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveValue(14000)
+    expect(screen.getByText('maternity')).toBeInTheDocument()
+    expect(screen.getByText('82%')).toBeInTheDocument()
+    expect(screen.getByText('Pregnancy care')).toBeInTheDocument()
+    expect(
+      screen.getByText(/Financial simulation only\. Not medical advice\./),
+    ).toBeInTheDocument()
+
+    const ppoSummaryCard = getSummaryCard('PPO Plan')
+    expect(within(ppoSummaryCard).getByText('$6,840')).toBeInTheDocument()
+  })
+
+  it('does not call the consultant when the scenario description is blank', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(
+      screen.getByText('Describe your expected healthcare year before running the consultant.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the backend error when scenario interpretation fails', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        error: 'The AI response did not include the required scenario tool call.',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(
+      screen.getByLabelText('Scenario Description'),
+      'I have a chronic condition with regular medication and specialist visits.',
+    )
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    expect(
+      screen.getByText('The AI response did not include the required scenario tool call.'),
+    ).toBeInTheDocument()
+  })
+
+  it('clears any active spend preset after applying an interpreted scenario', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scenarioType: 'chronic_condition',
+        estimatedAnnualMedicalSpend: 9600,
+        assumptions: ['Monthly prescriptions', 'Quarterly specialist visits'],
+        confidence: 0.74,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    const moderatePreset = screen.getByRole('button', { name: /Moderate:/ })
+    expect(moderatePreset).toHaveAttribute('aria-pressed', 'true')
+
+    await user.type(
+      screen.getByLabelText('Scenario Description'),
+      'I expect regular specialist visits and medication refills all year.',
+    )
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    expect(moderatePreset).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveValue(9600)
+  })
+
+  it('shows a user-friendly timeout error from the consultant backend', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        error: 'The AI consultant took too long to respond. Please try again in a moment.',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(
+      screen.getByLabelText('Scenario Description'),
+      'Please estimate a year with recurring appointments and a possible hospital stay.',
+    )
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    expect(
+      screen.getByText('The AI consultant took too long to respond. Please try again in a moment.'),
+    ).toBeInTheDocument()
+  })
+
+  it('recalculates totals after plan edits following an AI scenario', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scenarioType: 'moderate',
+        estimatedAnnualMedicalSpend: 14000,
+        assumptions: ['Specialist visits'],
+        confidence: 0.8,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(screen.getByLabelText('Scenario Description'), 'Moderate year')
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    const monthlyPremiumInput = screen.getAllByLabelText('Monthly Premium')[0]
+    await user.click(monthlyPremiumInput)
+    await user.type(monthlyPremiumInput, '100')
+
+    const ppoSummaryCard = getSummaryCard('PPO Plan')
+    expect(within(ppoSummaryCard).getByText('$4,200')).toBeInTheDocument()
+    expect(screen.queryByText('maternity')).not.toBeInTheDocument()
+  })
+
+  it('clears interpreted scenario output and recalculates after coverage type changes', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scenarioType: 'moderate',
+        estimatedAnnualMedicalSpend: 14000,
+        assumptions: ['Specialist visits'],
+        confidence: 0.8,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(screen.getByLabelText('Scenario Description'), 'Moderate year')
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'family' }))
+
+    const ppoSummaryCard = getSummaryCard('PPO Plan')
+    expect(within(ppoSummaryCard).getByText('$8,040')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Submit a plain-English scenario to generate a structured estimate, assumptions, and confidence score before comparing plans.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('clears interpreted scenario output after a manual annual spend edit', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scenarioType: 'major_event',
+        estimatedAnnualMedicalSpend: 50000,
+        assumptions: ['Hospitalization'],
+        confidence: 0.7,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(screen.getByLabelText('Scenario Description'), 'Major event year')
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
+    await user.click(spendInput)
+    await user.type(spendInput, '600')
+
+    expect(screen.queryByText('major event')).not.toBeInTheDocument()
   })
 
   it('updates displayed total costs after clicking a preset', async () => {
@@ -277,6 +498,9 @@ describe('App integration', () => {
 
     await user.tab()
     expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveFocus()
+
+    await user.tab()
+    expect(screen.getByLabelText('Scenario Description')).toHaveFocus()
 
     await user.tab()
     expect(screen.getAllByLabelText('Plan Name')[0]).toHaveFocus()

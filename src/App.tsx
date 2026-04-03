@@ -3,9 +3,12 @@ import type { FocusEvent, MouseEvent } from 'react'
 import { ComparisonResults } from './components/ComparisonResults'
 import { PlanForm } from './components/PlanForm'
 import { defaultPlans } from './data/defaultPlans'
+import { consultantDisclaimer } from './lib/consultant'
+import { interpretScenario } from './lib/consultantClient'
 import { calculateAnnualCost, getCheapestPlanIndex } from './lib/insurance'
 import { validateAnnualMedicalSpend, validatePlan } from './lib/validation'
 import type { CoverageType, InsurancePlan } from './types/insurance'
+import type { ScenarioInterpretation } from './types/consultant'
 
 const minimumPlanCount = 2
 const maximumPlanCount = 4
@@ -74,21 +77,36 @@ function handleInputClick(event: MouseEvent<HTMLInputElement>) {
   event.currentTarget.select()
 }
 
+function formatConfidence(confidence: number) {
+  return `${Math.round(confidence * 100)}%`
+}
+
 export default function App() {
   const [plans, setPlans] = useState<InsurancePlan[]>(initialPlans)
   const [annualMedicalSpend, setAnnualMedicalSpend] = useState(5000)
   const [annualMedicalSpendDraft, setAnnualMedicalSpendDraft] = useState<string | null>(null)
   const [activeSpendPreset, setActiveSpendPreset] = useState<SpendPresetId | null>('moderate')
   const [activeSpendPresetTooltip, setActiveSpendPresetTooltip] = useState<SpendPresetId | null>(null)
+  const [scenarioDescription, setScenarioDescription] = useState('')
+  const [scenarioInterpretation, setScenarioInterpretation] =
+    useState<ScenarioInterpretation | null>(null)
+  const [scenarioError, setScenarioError] = useState<string | null>(null)
+  const [isInterpretingScenario, setIsInterpretingScenario] = useState(false)
   const [coverageType, setCoverageType] = useState<CoverageType>('individual')
   const [planViewMode, setPlanViewMode] = useState<PlanViewMode>('scroll')
   const spendPresets = getSpendPresets(coverageType)
+
+  const clearScenarioInterpretation = () => {
+    setScenarioInterpretation(null)
+    setScenarioError(null)
+  }
 
   const updatePlan = (
     index: number,
     field: keyof InsurancePlan,
     value: string | number,
   ) => {
+    clearScenarioInterpretation()
     setPlans((currentPlans) =>
       currentPlans.map((plan, planIndex) =>
         planIndex === index ? { ...plan, [field]: value } : plan,
@@ -139,6 +157,38 @@ export default function App() {
       ? { gridAutoColumns: 'minmax(22rem, 1fr)' }
       : condensedPlanLayoutStyle
 
+  const handleScenarioInterpretation = async () => {
+    if (!scenarioDescription.trim()) {
+      setScenarioError('Describe your expected healthcare year before running the consultant.')
+      return
+    }
+
+    setIsInterpretingScenario(true)
+    setScenarioError(null)
+
+    try {
+      const interpretation = await interpretScenario({
+        userInput: scenarioDescription,
+        coverageType,
+        plans,
+      })
+
+      setScenarioInterpretation(interpretation)
+      setAnnualMedicalSpend(interpretation.estimatedAnnualMedicalSpend)
+      setAnnualMedicalSpendDraft(null)
+      setActiveSpendPreset(null)
+      setActiveSpendPresetTooltip(null)
+    } catch (error) {
+      setScenarioError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to interpret the scenario right now.',
+      )
+    } finally {
+      setIsInterpretingScenario(false)
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#e0f2fe,_#f8fafc_50%,_#e2e8f0)] px-4 py-10 text-slate-900">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
@@ -181,6 +231,7 @@ export default function App() {
                     type="button"
                     onBlur={() => setActiveSpendPresetTooltip(null)}
                     onClick={() => {
+                      clearScenarioInterpretation()
                       setAnnualMedicalSpend(preset.value)
                       setAnnualMedicalSpendDraft(null)
                       setActiveSpendPreset(preset.id)
@@ -225,10 +276,12 @@ export default function App() {
                 setAnnualMedicalSpend(event.target.value === '' ? 0 : Number(event.target.value))
                 setActiveSpendPreset(null)
                 setAnnualMedicalSpendDraft(null)
+                clearScenarioInterpretation()
               }}
               onChange={(event) => {
                 setAnnualMedicalSpendDraft(event.target.value)
                 setActiveSpendPreset(null)
+                clearScenarioInterpretation()
 
                 if (event.target.value !== '') {
                   setAnnualMedicalSpend(Number(event.target.value))
@@ -297,6 +350,7 @@ export default function App() {
 
                     setCoverageType(nextCoverageType)
                     setActiveSpendPresetTooltip(null)
+                    clearScenarioInterpretation()
 
                     if (nextPresetValue !== null) {
                       setAnnualMedicalSpend(nextPresetValue)
@@ -316,6 +370,101 @@ export default function App() {
               but these inputs should be corrected.
             </div>
           ) : null}
+        </section>
+
+        <section className="rounded-[2rem] border border-white/60 bg-white/75 p-8 shadow-xl shadow-slate-200/60 backdrop-blur">
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-semibold uppercase tracking-[0.3em] text-sky-700">
+              AI Consultant
+            </p>
+            <h2 className="text-2xl font-semibold text-slate-950">
+              Describe your healthcare year in plain English
+            </h2>
+            <p className="max-w-3xl text-sm leading-6 text-slate-600">
+              The AI consultant interprets your description into a structured scenario.
+              Your plan totals still come from the app&apos;s existing insurance cost
+              engine, not from the model guessing numbers.
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.9fr)]">
+            <div>
+              <label
+                className="mb-2 block text-sm font-medium text-slate-700"
+                htmlFor="scenario-description"
+              >
+                Scenario Description
+              </label>
+              <textarea
+                className="min-h-36 w-full rounded-3xl border border-slate-200 bg-white px-4 py-4 text-slate-900 outline-none transition focus:border-sky-500"
+                id="scenario-description"
+                placeholder="Example: We are planning for a pregnancy, a few specialist visits, and some lab work this year."
+                value={scenarioDescription}
+                onChange={(event) => {
+                  setScenarioDescription(event.target.value)
+                  setScenarioError(null)
+                }}
+              />
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  tabIndex={-1}
+                  type="button"
+                  disabled={isInterpretingScenario}
+                  onClick={handleScenarioInterpretation}
+                >
+                  {isInterpretingScenario ? 'Interpreting Scenario...' : 'Interpret Scenario'}
+                </button>
+                <p className="text-xs leading-5 text-slate-500">{consultantDisclaimer}</p>
+              </div>
+              {scenarioError ? (
+                <p className="mt-3 text-sm text-rose-600">{scenarioError}</p>
+              ) : null}
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-slate-50/90 p-5">
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
+                Interpreted Scenario
+              </p>
+              {scenarioInterpretation ? (
+                <div className="mt-4 space-y-3 text-sm text-slate-700">
+                  <p>
+                    <span className="font-semibold text-slate-900">Type:</span>{' '}
+                    {scenarioInterpretation.scenarioType.replace('_', ' ')}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">
+                      Estimated annual spend:
+                    </span>{' '}
+                    ${scenarioInterpretation.estimatedAnnualMedicalSpend.toLocaleString()}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">Confidence:</span>{' '}
+                    {formatConfidence(scenarioInterpretation.confidence)}
+                  </p>
+                  <div>
+                    <p className="font-semibold text-slate-900">Assumptions</p>
+                    <ul className="mt-2 list-disc pl-5 text-slate-600">
+                      {scenarioInterpretation.assumptions.map((assumption) => (
+                        <li key={assumption}>{assumption}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <p className="rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                    Financial simulation only. Not medical advice. Costs below are
+                    computed by the insurance calculator using this interpreted spend
+                    estimate, and final costs still depend on insurer rules and actual
+                    claims processing.
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-4 text-sm leading-6 text-slate-600">
+                  Submit a plain-English scenario to generate a structured estimate,
+                  assumptions, and confidence score before comparing plans.
+                </p>
+              )}
+            </div>
+          </div>
         </section>
 
         <section className="flex items-center justify-between gap-4">
