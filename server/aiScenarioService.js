@@ -12,6 +12,23 @@ const allowedScenarioTypes = [
   'major_event',
 ]
 
+const scenarioSpendFloors = {
+  individual: {
+    healthy: 500,
+    moderate: 3000,
+    chronic_condition: 8000,
+    maternity: 12000,
+    major_event: 20000,
+  },
+  family: {
+    healthy: 1500,
+    moderate: 8000,
+    chronic_condition: 12000,
+    maternity: 18000,
+    major_event: 30000,
+  },
+}
+
 const allowedPlanFields = [
   'name',
   'monthlyPremium',
@@ -207,15 +224,22 @@ export function buildAiScenarioRequest(payload, model = 'gpt-4o-mini') {
   }
 }
 
-export function normalizeAiScenarioInterpretation(interpretation) {
+export function normalizeAiScenarioInterpretation(
+  interpretation,
+  coverageType = 'individual',
+) {
+  const normalizedSpend = Math.max(
+    0,
+    Number.isFinite(interpretation.estimatedAnnualMedicalSpend)
+      ? interpretation.estimatedAnnualMedicalSpend
+      : 0,
+  )
+  const spendFloor =
+    scenarioSpendFloors[coverageType]?.[interpretation.scenarioType] ?? 0
+
   return {
     scenarioType: interpretation.scenarioType,
-    estimatedAnnualMedicalSpend: Math.max(
-      0,
-      Number.isFinite(interpretation.estimatedAnnualMedicalSpend)
-        ? interpretation.estimatedAnnualMedicalSpend
-        : 0,
-    ),
+    estimatedAnnualMedicalSpend: Math.max(normalizedSpend, spendFloor),
     assumptions: Array.isArray(interpretation.assumptions)
       ? interpretation.assumptions.filter(Boolean)
       : [],
@@ -226,7 +250,11 @@ export function normalizeAiScenarioInterpretation(interpretation) {
   }
 }
 
-export function extractAiScenarioInterpretation(response, normalizeScenarioInterpretation) {
+export function extractAiScenarioInterpretation(
+  response,
+  normalizeScenarioInterpretation,
+  coverageType = 'individual',
+) {
   const toolCall = response.output?.find(
     (item) =>
       item.type === 'function_call' && item.name === interpretScenarioToolName,
@@ -257,7 +285,7 @@ export function extractAiScenarioInterpretation(response, normalizeScenarioInter
     throw error
   }
 
-  const normalized = normalizeScenarioInterpretation(parsedArguments)
+  const normalized = normalizeScenarioInterpretation(parsedArguments, coverageType)
   if (!allowedScenarioTypes.includes(normalized.scenarioType)) {
     const error = new Error('The AI response normalization failed.')
     error.code = 'normalization_failed'
@@ -323,6 +351,7 @@ export async function requestAiScenarioInterpretationFromOpenAi({
       return extractAiScenarioInterpretation(
         openAiPayload,
         normalizeAiScenarioInterpretation,
+        payload.coverageType,
       )
     } catch (error) {
       const isTimeout =

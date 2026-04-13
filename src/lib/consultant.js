@@ -1,5 +1,21 @@
 export const interpretScenarioToolName = 'interpret_insurance_scenario';
 export const consultantDisclaimer = 'This is a financial simulation, not medical advice. Final costs depend on your insurer, the care you receive, and how claims are processed.';
+const scenarioSpendFloors = {
+    individual: {
+        healthy: 500,
+        moderate: 3000,
+        chronic_condition: 8000,
+        maternity: 12000,
+        major_event: 20000,
+    },
+    family: {
+        healthy: 1500,
+        moderate: 8000,
+        chronic_condition: 12000,
+        maternity: 18000,
+        major_event: 30000,
+    },
+};
 export function buildScenarioInterpretationPrompt(request) {
     return [
         `Coverage type: ${request.coverageType}`,
@@ -71,12 +87,13 @@ export function buildScenarioInterpretationRequest(request, model = 'gpt-5-mini'
         ],
     };
 }
-export function normalizeScenarioInterpretation(interpretation) {
+export function normalizeScenarioInterpretation(interpretation, coverageType = 'individual') {
+    const normalizedSpend = Math.max(0, Number.isFinite(interpretation.estimatedAnnualMedicalSpend)
+        ? interpretation.estimatedAnnualMedicalSpend
+        : 0);
     return {
         scenarioType: interpretation.scenarioType,
-        estimatedAnnualMedicalSpend: Math.max(0, Number.isFinite(interpretation.estimatedAnnualMedicalSpend)
-            ? interpretation.estimatedAnnualMedicalSpend
-            : 0),
+        estimatedAnnualMedicalSpend: Math.max(normalizedSpend, scenarioSpendFloors[coverageType][interpretation.scenarioType]),
         assumptions: interpretation.assumptions.filter(Boolean),
         confidence: Math.min(1, Math.max(0, Number.isFinite(interpretation.confidence) ? interpretation.confidence : 0)),
     };

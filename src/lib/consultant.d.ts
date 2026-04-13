@@ -1,4 +1,5 @@
 import type { ScenarioInterpretation, ScenarioInterpretationRequest } from '../types/consultant';
+import type { CoverageType } from '../types/insurance';
 export declare const interpretScenarioToolName = "interpret_insurance_scenario";
 export declare const consultantDisclaimer = "This is a financial simulation, not medical advice. Final costs depend on your insurer, the care you receive, and how claims are processed.";
 export declare function buildScenarioInterpretationPrompt(request: ScenarioInterpretationRequest): string;
@@ -43,7 +44,7 @@ export declare function buildScenarioInterpretationRequest(request: ScenarioInte
         };
     }[];
 };
-export declare function normalizeScenarioInterpretation(interpretation: ScenarioInterpretation): ScenarioInterpretation;
+export declare function normalizeScenarioInterpretation(interpretation: ScenarioInterpretation, coverageType?: CoverageType): ScenarioInterpretation;
 export declare function extractScenarioInterpretation(response: {
     output?: Array<{
         type?: string;

@@ -102,14 +102,69 @@ describe('aiScenarioService', () => {
         ],
       },
       normalizeAiScenarioInterpretation,
+      'individual',
     )
 
     expect(interpretation).toEqual({
       scenarioType: 'maternity',
-      estimatedAnnualMedicalSpend: 0,
+      estimatedAnnualMedicalSpend: 12000,
       assumptions: ['Prenatal visits', 'Delivery'],
       confidence: 1,
     })
+  })
+
+  it('raises chronic condition spend to the individual floor when the model undershoots', () => {
+    const interpretation = normalizeAiScenarioInterpretation(
+      {
+        scenarioType: 'chronic_condition',
+        estimatedAnnualMedicalSpend: 2400,
+        assumptions: ['Ongoing specialist care', 'Recurring prescriptions'],
+        confidence: 0.82,
+      },
+      'individual',
+    )
+
+    expect(interpretation).toEqual({
+      scenarioType: 'chronic_condition',
+      estimatedAnnualMedicalSpend: 8000,
+      assumptions: ['Ongoing specialist care', 'Recurring prescriptions'],
+      confidence: 0.82,
+    })
+  })
+
+  it('raises major event spend to the family floor when the model undershoots', () => {
+    const interpretation = normalizeAiScenarioInterpretation(
+      {
+        scenarioType: 'major_event',
+        estimatedAnnualMedicalSpend: 18000,
+        assumptions: ['Emergency care', 'Hospital stay'],
+        confidence: 0.74,
+      },
+      'family',
+    )
+
+    expect(interpretation).toEqual({
+      scenarioType: 'major_event',
+      estimatedAnnualMedicalSpend: 30000,
+      assumptions: ['Emergency care', 'Hospital stay'],
+      confidence: 0.74,
+    })
+  })
+
+  it('keeps higher spend estimates when they already exceed the floor', () => {
+    const interpretation = normalizeAiScenarioInterpretation(
+      {
+        scenarioType: 'major_event',
+        estimatedAnnualMedicalSpend: 50000,
+        assumptions: ['Complex hospitalization'],
+        confidence: 0.91,
+      },
+      'family',
+    )
+
+    expect(interpretation.estimatedAnnualMedicalSpend).toBe(50000)
+    expect(interpretation.assumptions).toEqual(['Complex hospitalization'])
+    expect(interpretation.confidence).toBe(0.91)
   })
 
   it('rejects forbidden calculator-like model output fields', () => {
