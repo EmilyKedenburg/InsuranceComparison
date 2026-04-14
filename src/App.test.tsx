@@ -146,7 +146,7 @@ describe('App integration', () => {
 
     expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveValue(14000)
     expect(screen.getByText('maternity')).toBeInTheDocument()
-    expect(screen.getByText('82%')).toBeInTheDocument()
+    expect(screen.getByText(/Confidence 82%/)).toBeInTheDocument()
     expect(screen.getByText('Pregnancy care')).toBeInTheDocument()
     expect(
       screen.getByText(/Financial simulation only\. Not medical advice\./),
@@ -269,10 +269,10 @@ describe('App integration', () => {
 
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     expect(within(ppoSummaryCard).getByText('$4,200')).toBeInTheDocument()
-    expect(screen.queryByText('maternity')).not.toBeInTheDocument()
+    expect(screen.getByText('moderate')).toBeInTheDocument()
   })
 
-  it('clears interpreted scenario output and recalculates after coverage type changes', async () => {
+  it('keeps interpreted scenario output and recalculates after coverage type changes', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -293,14 +293,11 @@ describe('App integration', () => {
 
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     expect(within(ppoSummaryCard).getByText('$8,040')).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        'Submit a plain-English scenario to generate a structured estimate, assumptions, and confidence score before comparing plans.',
-      ),
-    ).toBeInTheDocument()
+    expect(screen.getByText('moderate')).toBeInTheDocument()
+    expect(screen.getByText('AI Estimate')).toBeInTheDocument()
   })
 
-  it('clears interpreted scenario output after a manual annual spend edit', async () => {
+  it('keeps AI interpretation visible after a manual annual spend edit', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -320,9 +317,172 @@ describe('App integration', () => {
 
     const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
     await user.click(spendInput)
+    await user.clear(spendInput)
     await user.type(spendInput, '600')
 
-    expect(screen.queryByText('major event')).not.toBeInTheDocument()
+    expect(screen.getByText('major event')).toBeInTheDocument()
+    expect(screen.getByText('Manual override applied')).toBeInTheDocument()
+    expect(screen.getByText('AI Estimate')).toBeInTheDocument()
+    expect(screen.getByText('Current Spend')).toBeInTheDocument()
+  })
+
+  it('shows both the AI estimate and current spend when manually overridden', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scenarioType: 'chronic_condition',
+        estimatedAnnualMedicalSpend: 8000,
+        assumptions: ['Specialist visits'],
+        confidence: 0.78,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(screen.getByLabelText('Scenario Description'), 'Chronic condition year')
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
+    await user.clear(spendInput)
+    await user.type(spendInput, '9200')
+
+    expect(screen.getByText('$8,000')).toBeInTheDocument()
+    expect(screen.getByText('$9,200')).toBeInTheDocument()
+    expect(screen.getByText('Using your current spend override in the calculator.')).toBeInTheDocument()
+  })
+
+  it('clicking reapply ai estimate restores the ai-estimated spend', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scenarioType: 'major_event',
+        estimatedAnnualMedicalSpend: 20000,
+        assumptions: ['Hospital stay'],
+        confidence: 0.7,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(screen.getByLabelText('Scenario Description'), 'Major event year')
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
+    await user.clear(spendInput)
+    await user.type(spendInput, '600')
+    await user.click(screen.getByRole('button', { name: 'Reapply AI Estimate' }))
+
+    expect(spendInput).toHaveValue(20000)
+  })
+
+  it('override state clears after reapplying the ai estimate', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scenarioType: 'major_event',
+        estimatedAnnualMedicalSpend: 20000,
+        assumptions: ['Hospital stay'],
+        confidence: 0.7,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(screen.getByLabelText('Scenario Description'), 'Major event year')
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
+    await user.clear(spendInput)
+    await user.type(spendInput, '600')
+    expect(screen.getByText('Manual override applied')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reapply AI Estimate' }))
+
+    expect(screen.queryByText('Manual override applied')).not.toBeInTheDocument()
+    expect(screen.getByText('Using the latest AI-estimated spend.')).toBeInTheDocument()
+  })
+
+  it('override state clears when the current spend matches the ai estimate again', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scenarioType: 'moderate',
+        estimatedAnnualMedicalSpend: 14000,
+        assumptions: ['Specialist visits'],
+        confidence: 0.8,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(screen.getByLabelText('Scenario Description'), 'Moderate year')
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
+    await user.clear(spendInput)
+    await user.type(spendInput, '15000')
+    expect(screen.getByText('Manual override applied')).toBeInTheDocument()
+
+    await user.clear(spendInput)
+    await user.type(spendInput, '14000')
+
+    expect(screen.queryByText('Manual override applied')).not.toBeInTheDocument()
+    expect(screen.getByText('Using the latest AI-estimated spend.')).toBeInTheDocument()
+  })
+
+  it('renders a winning-plan explanation and updates it based on calculator results', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(screen.getByText('Why this plan is cheaper')).toBeInTheDocument()
+    expect(
+      screen.getByText(/HDHP Plan has a lower annual premium by \$1,620\./),
+    ).toBeInTheDocument()
+
+    const monthlyPremiumInputs = screen.getAllByLabelText('Monthly Premium')
+    await user.clear(monthlyPremiumInputs[0])
+    await user.type(monthlyPremiumInputs[0], '100')
+
+    expect(
+      screen.getByText(/PPO Plan has a lower annual premium by \$1,020\./),
+    ).toBeInTheDocument()
+  })
+
+  it('recalculates after plan edits and coverage changes while keeping ai details visible', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        scenarioType: 'moderate',
+        estimatedAnnualMedicalSpend: 14000,
+        assumptions: ['Specialist visits'],
+        confidence: 0.8,
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await user.type(screen.getByLabelText('Scenario Description'), 'Moderate year')
+    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+
+    const monthlyPremiumInput = screen.getAllByLabelText('Monthly Premium')[0]
+    await user.clear(monthlyPremiumInput)
+    await user.type(monthlyPremiumInput, '100')
+    await user.click(screen.getByRole('button', { name: 'family' }))
+
+    const ppoSummaryCard = getSummaryCard('PPO Plan')
+    expect(within(ppoSummaryCard).getByText('$5,400')).toBeInTheDocument()
+    expect(screen.getByText('moderate')).toBeInTheDocument()
+    expect(screen.getAllByText('$14,000').length).toBeGreaterThan(0)
   })
 
   it('updates displayed total costs after clicking a preset', async () => {

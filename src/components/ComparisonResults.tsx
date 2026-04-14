@@ -33,6 +33,65 @@ function formatCurrency(value: number) {
     : centsFormatter.format(roundedValue)
 }
 
+function getCurrentDeductible(plan: InsurancePlan, coverageType: CoverageType) {
+  return coverageType === 'family' ? plan.familyDeductible : plan.individualDeductible
+}
+
+function buildWinnerExplanation(
+  winnerPlan: InsurancePlan,
+  winnerResult: AnnualCostBreakdown,
+  runnerUpPlan: InsurancePlan | undefined,
+  runnerUpResult: AnnualCostBreakdown | undefined,
+  coverageType: CoverageType,
+) {
+  if (!runnerUpPlan || !runnerUpResult) {
+    return [`${winnerPlan.name} is the only plan to compare, so it is currently the cheapest option.`]
+  }
+
+  const reasons: string[] = []
+  const premiumDifference = runnerUpResult.premiumCost - winnerResult.premiumCost
+  const employerDifference =
+    winnerResult.employerContribution - runnerUpResult.employerContribution
+  const adjustedMedicalDifference =
+    runnerUpResult.adjustedMedicalCost - winnerResult.adjustedMedicalCost
+  const winnerDeductible = getCurrentDeductible(winnerPlan, coverageType)
+  const runnerUpDeductible = getCurrentDeductible(runnerUpPlan, coverageType)
+
+  if (premiumDifference > 0) {
+    reasons.push(
+      `${winnerPlan.name} has a lower annual premium by ${formatCurrency(premiumDifference)}.`,
+    )
+  }
+
+  if (employerDifference > 0) {
+    reasons.push(
+      `${winnerPlan.name} gets ${formatCurrency(employerDifference)} more employer contribution.`,
+    )
+  }
+
+  if (adjustedMedicalDifference > 0) {
+    reasons.push(
+      `${winnerPlan.name} has a lower adjusted medical cost in this scenario by ${formatCurrency(adjustedMedicalDifference)}.`,
+    )
+  }
+
+  if (winnerDeductible > runnerUpDeductible && premiumDifference > 0) {
+    reasons.push('Its higher deductible did not outweigh the premium savings in this scenario.')
+  }
+
+  if (winnerDeductible < runnerUpDeductible && adjustedMedicalDifference > 0) {
+    reasons.push('Its lower deductible helped reduce what you pay for care at this spend level.')
+  }
+
+  if (reasons.length === 0) {
+    reasons.push(
+      `${winnerPlan.name} ends up with the lowest total annual cost after premiums, employer funding, and out-of-pocket costs are combined.`,
+    )
+  }
+
+  return reasons.slice(0, 3)
+}
+
 function SummaryCard({
   label,
   plan,
@@ -80,9 +139,19 @@ export function ComparisonResults({
   viewMode,
 }: ComparisonResultsProps) {
   const cheapestPlanIndex = getCheapestPlanIndex(results)
+  const winningPlan = plans[cheapestPlanIndex]
+  const winningResult = results[cheapestPlanIndex]
   const sortedTotals = [...results]
     .map((result, index) => ({ result, index }))
     .sort((left, right) => left.result.totalAnnualCost - right.result.totalAnnualCost)
+  const runnerUpIndex = sortedTotals[1]?.index
+  const winnerExplanation = buildWinnerExplanation(
+    winningPlan,
+    winningResult,
+    runnerUpIndex === undefined ? undefined : plans[runnerUpIndex],
+    runnerUpIndex === undefined ? undefined : results[runnerUpIndex],
+    coverageType,
+  )
   const savings =
     sortedTotals.length > 1
       ? sortedTotals[1].result.totalAnnualCost - sortedTotals[0].result.totalAnnualCost
@@ -115,9 +184,17 @@ export function ComparisonResults({
           {coverageType} coverage selected
         </p>
         <p className="text-slate-600">
-          {plans[cheapestPlanIndex].name} is currently the cheapest plan
+          {winningPlan.name} is currently the cheapest plan
           {sortedTotals.length > 1 ? ` by ${formatCurrency(savings)}` : ''}.
         </p>
+        <div className="rounded-3xl border border-sky-100 bg-sky-50/70 p-4">
+          <p className="text-sm font-semibold text-slate-900">Why this plan is cheaper</p>
+          <ul className="mt-2 list-disc pl-5 text-sm leading-6 text-slate-600">
+            {winnerExplanation.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        </div>
       </div>
 
       <div className={`mt-6 ${viewMode === 'scroll' ? 'overflow-x-auto pb-2' : ''}`}>

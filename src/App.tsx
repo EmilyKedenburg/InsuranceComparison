@@ -81,6 +81,10 @@ function formatConfidence(confidence: number) {
   return `${Math.round(confidence * 100)}%`
 }
 
+function formatCurrency(value: number) {
+  return `$${value.toLocaleString()}`
+}
+
 export default function App() {
   const [plans, setPlans] = useState<InsurancePlan[]>(initialPlans)
   const [annualMedicalSpend, setAnnualMedicalSpend] = useState(5000)
@@ -95,18 +99,23 @@ export default function App() {
   const [coverageType, setCoverageType] = useState<CoverageType>('individual')
   const [planViewMode, setPlanViewMode] = useState<PlanViewMode>('scroll')
   const spendPresets = getSpendPresets(coverageType)
-
-  const clearScenarioInterpretation = () => {
-    setScenarioInterpretation(null)
-    setScenarioError(null)
-  }
+  const aiEstimatedSpend = scenarioInterpretation?.estimatedAnnualMedicalSpend ?? null
+  const hasManualOverride =
+    aiEstimatedSpend !== null && annualMedicalSpend !== aiEstimatedSpend
+  const currentSpendSource = scenarioInterpretation
+    ? hasManualOverride
+      ? 'manual_override'
+      : 'ai_estimate'
+    : activeSpendPreset
+      ? 'preset'
+      : 'manual'
 
   const updatePlan = (
     index: number,
     field: keyof InsurancePlan,
     value: string | number,
   ) => {
-    clearScenarioInterpretation()
+    setScenarioError(null)
     setPlans((currentPlans) =>
       currentPlans.map((plan, planIndex) =>
         planIndex === index ? { ...plan, [field]: value } : plan,
@@ -231,7 +240,7 @@ export default function App() {
                     type="button"
                     onBlur={() => setActiveSpendPresetTooltip(null)}
                     onClick={() => {
-                      clearScenarioInterpretation()
+                      setScenarioError(null)
                       setAnnualMedicalSpend(preset.value)
                       setAnnualMedicalSpendDraft(null)
                       setActiveSpendPreset(preset.id)
@@ -276,12 +285,12 @@ export default function App() {
                 setAnnualMedicalSpend(event.target.value === '' ? 0 : Number(event.target.value))
                 setActiveSpendPreset(null)
                 setAnnualMedicalSpendDraft(null)
-                clearScenarioInterpretation()
+                setScenarioError(null)
               }}
               onChange={(event) => {
                 setAnnualMedicalSpendDraft(event.target.value)
                 setActiveSpendPreset(null)
-                clearScenarioInterpretation()
+                setScenarioError(null)
 
                 if (event.target.value !== '') {
                   setAnnualMedicalSpend(Number(event.target.value))
@@ -350,7 +359,7 @@ export default function App() {
 
                     setCoverageType(nextCoverageType)
                     setActiveSpendPresetTooltip(null)
-                    clearScenarioInterpretation()
+                    setScenarioError(null)
 
                     if (nextPresetValue !== null) {
                       setAnnualMedicalSpend(nextPresetValue)
@@ -427,23 +436,77 @@ export default function App() {
                 Interpreted Scenario
               </p>
               {scenarioInterpretation ? (
-                <div className="mt-4 space-y-3 text-sm text-slate-700">
-                  <p>
-                    <span className="font-semibold text-slate-900">Type:</span>{' '}
-                    {scenarioInterpretation.scenarioType.replace('_', ' ')}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">
-                      Estimated annual spend:
-                    </span>{' '}
-                    ${scenarioInterpretation.estimatedAnnualMedicalSpend.toLocaleString()}
-                  </p>
-                  <p>
-                    <span className="font-semibold text-slate-900">Confidence:</span>{' '}
-                    {formatConfidence(scenarioInterpretation.confidence)}
-                  </p>
+                <div className="mt-4 space-y-4 text-sm text-slate-700">
+                  <div className="grid gap-3 rounded-3xl border border-slate-200 bg-white/80 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Scenario
+                        </p>
+                        <p className="mt-1 text-lg font-semibold text-slate-950">
+                          {scenarioInterpretation.scenarioType.replace('_', ' ')}
+                        </p>
+                      </div>
+                      <div className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">
+                        Confidence {formatConfidence(scenarioInterpretation.confidence)}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          AI Estimate
+                        </p>
+                        <p className="mt-1 text-base font-semibold text-slate-950">
+                          {formatCurrency(scenarioInterpretation.estimatedAnnualMedicalSpend)}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Current Spend
+                        </p>
+                        <p className="mt-1 text-base font-semibold text-slate-950">
+                          {formatCurrency(annualMedicalSpend)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {currentSpendSource === 'ai_estimate'
+                            ? 'Using the latest AI-estimated spend.'
+                            : currentSpendSource === 'manual_override'
+                              ? 'Using your current spend override in the calculator.'
+                              : 'Using the current spend input.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {hasManualOverride ? (
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
+                        <div>
+                          <p className="font-semibold text-amber-900">Manual override applied</p>
+                          <p className="text-xs leading-5 text-amber-800">
+                            You adjusted the AI-estimated spend manually. Totals below use
+                            {` ${formatCurrency(annualMedicalSpend)} `}until you reapply the AI
+                            estimate.
+                          </p>
+                        </div>
+                        <button
+                          className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:border-amber-400 hover:bg-amber-100"
+                          tabIndex={-1}
+                          type="button"
+                          onClick={() => {
+                            setAnnualMedicalSpend(scenarioInterpretation.estimatedAnnualMedicalSpend)
+                            setAnnualMedicalSpendDraft(null)
+                            setActiveSpendPreset(null)
+                            setScenarioError(null)
+                          }}
+                        >
+                          Reapply AI Estimate
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+
                   <div>
-                    <p className="font-semibold text-slate-900">Assumptions</p>
+                    <p className="font-semibold text-slate-900">Why this estimate</p>
                     <ul className="mt-2 list-disc pl-5 text-slate-600">
                       {scenarioInterpretation.assumptions.map((assumption) => (
                         <li key={assumption}>{assumption}</li>
@@ -452,9 +515,9 @@ export default function App() {
                   </div>
                   <p className="rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-slate-600">
                     Financial simulation only. Not medical advice. Costs below are
-                    computed by the insurance calculator using this interpreted spend
-                    estimate, and final costs still depend on insurer rules and actual
-                    claims processing.
+                    computed by the insurance calculator using the current spend value,
+                    and final costs still depend on insurer rules and actual claims
+                    processing.
                   </p>
                 </div>
               ) : (
