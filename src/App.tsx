@@ -210,9 +210,7 @@ export default function App() {
             cost.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-            Enter plan details and estimate your annual medical spend. The
-            calculation engine stays separate from the UI, so we can expand this into
-            richer scenarios later without mixing business rules into components.
+            Enter plan details and estimate your annual medical spend.
           </p>
 
           <div className="mt-8 max-w-sm">

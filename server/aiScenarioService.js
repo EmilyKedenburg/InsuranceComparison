@@ -53,12 +53,212 @@ const forbiddenModelFields = [
   'costComparison',
 ]
 
+const recurringFrequencyMatchers = [
+  {
+    pattern:
+      /\b(?:weekly|every week|once a week|1x a week|one time a week|per week)\b/i,
+    annualOccurrences: 52,
+  },
+  {
+    pattern:
+      /\b(?:biweekly|bi-weekly|every other week|every two weeks|once every two weeks)\b/i,
+    annualOccurrences: 26,
+  },
+  {
+    pattern:
+      /\b(?:twice a month|two times a month|2x a month|semi-monthly|semimonthly)\b/i,
+    annualOccurrences: 24,
+  },
+  {
+    pattern:
+      /\b(?:monthly|every month|once a month|1x a month|per month)\b/i,
+    annualOccurrences: 12,
+  },
+]
+
+const fuzzyEstimatePattern =
+  /\b(?:about|around|roughly|approximately|approx|maybe|might|probably|not sure|i think|some|a few|few)\b/i
+
+const oneTimeCostPatterns = [
+  /\b(?:one[- ]time|one time|single)\b[^$]{0,80}?(?:costs?|at|for)\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
+  /\bone\b[^$]{0,40}\b(?:procedure|surgery|operation|scan|mri|test|treatment|visit|appointment)\b[^$]{0,80}?(?:costs?|at|for)\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
+  /\ba\b[^$]{0,40}\b(?:procedure|surgery|operation|scan|mri|test|treatment)\b[^$]{0,80}?(?:costs?|at|for)\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
+]
+
+// Patterns for explicit chronic condition evidence
+const explicitChronicEvidencePatterns = [
+  /\bchronic\s+(?:condition|disease|illness|care|management)\b/i,
+  /\blong[- ]?term\s+(?:condition|disease|illness|care|management)\b/i,
+  /\bongoing\s+disease\b/i,
+  /\b(?:diabetes|asthma|hypertension|high blood pressure|copd|lupus|rheumatoid arthritis|heart disease|cancer|crohn|ulcerative colitis|cystic fibrosis|sickle cell|multiple sclerosis|parkinson|epilepsy|thyroid|bipolar|schizophrenia|depression|anxiety disorder)\b/i,
+]
+
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function coerceFiniteNumber(value) {
   return Number.isFinite(value) ? value : 0
+}
+
+function parseDollarAmount(rawAmount) {
+  const normalizedAmount = Number(String(rawAmount).replace(/,/g, ''))
+  return Number.isFinite(normalizedAmount) ? normalizedAmount : null
+}
+
+function formatWholeDollarAmount(amount) {
+  return `$${Math.round(amount).toLocaleString()}`
+}
+
+function getRecurringAnnualOccurrences(text) {
+  for (const matcher of recurringFrequencyMatchers) {
+    if (matcher.pattern.test(text)) {
+      return matcher
+    }
+  }
+
+  return null
+}
+
+function getRecurringCostPerVisit(text) {
+  const recurringCostPatterns = [
+    /\bcosts?\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
+    /\beach\s+(?:visit|appointment|session)\s+costs?\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
+    /\beach\s+(?:visit|appointment|session)\s+is\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
+    /\$\s?([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:each|each visit|each appointment)\b/i,
+    /\$\s?([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:per visit|per appointment)\b/i,
+    /\bat\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:each|per visit|per appointment)?\b/i,
+  ]
+
+  for (const pattern of recurringCostPatterns) {
+    const match = text.match(pattern)
+    if (!match) {
+      continue
+    }
+
+    return parseDollarAmount(match[1])
+  }
+
+  return null
+}
+
+function getOneTimeCost(text) {
+  for (const pattern of oneTimeCostPatterns) {
+    const match = text.match(pattern)
+    if (!match) {
+      continue
+    }
+
+    return parseDollarAmount(match[1])
+  }
+
+  return null
+}
+
+function splitCostClauses(userInput) {
+  return userInput
+    .split(/[.!?;\n]+/)
+    .flatMap((segment) => segment.split(/\s*\+\s*/))
+    .flatMap((segment) => segment.split(/,(?=\s*[A-Za-z])/))
+    .flatMap((segment) => segment.split(/\s+\band\b\s+/i))
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+}
+
+function mergeRelatedCostClauses(clauses) {
+  const mergedClauses = []
+
+  for (const clause of clauses) {
+    const previousClause = mergedClauses[mergedClauses.length - 1]
+
+    if (!previousClause) {
+      mergedClauses.push(clause)
+      continue
+    }
+
+    const previousHasFrequency = getRecurringAnnualOccurrences(previousClause) !== null
+    const previousHasCost =
+      getRecurringCostPerVisit(previousClause) !== null || getOneTimeCost(previousClause) !== null
+    const currentHasFrequency = getRecurringAnnualOccurrences(clause) !== null
+    const currentHasCost =
+      getRecurringCostPerVisit(clause) !== null || getOneTimeCost(clause) !== null
+
+    if (previousHasFrequency && !previousHasCost && !currentHasFrequency && currentHasCost) {
+      mergedClauses[mergedClauses.length - 1] = `${previousClause} ${clause}`.trim()
+      continue
+    }
+
+    mergedClauses.push(clause)
+  }
+
+  return mergedClauses
+}
+
+export function analyzeScenarioCostEstimate(userInput = '') {
+  const normalizedInput = typeof userInput === 'string' ? userInput.trim() : ''
+
+  if (!normalizedInput) {
+    return {
+      estimationMode: 'inferred',
+      extractedAnnualSpend: 0,
+      extractedItemCount: 0,
+      hasFuzzyWording: false,
+      extractedAssumptions: [],
+    }
+  }
+
+  const clauses = mergeRelatedCostClauses(splitCostClauses(normalizedInput))
+  const extractedAssumptions = []
+  const extractedAnnualSpend = clauses.reduce((total, clause) => {
+    const frequencyMatch = getRecurringAnnualOccurrences(clause)
+    const costPerVisit = getRecurringCostPerVisit(clause)
+    const oneTimeCost = getOneTimeCost(clause)
+
+    if (frequencyMatch !== null && costPerVisit !== null) {
+      const annualizedCost = frequencyMatch.annualOccurrences * costPerVisit
+      extractedAssumptions.push(
+        `${frequencyMatch.pattern.source.includes('weekly') ? 'Recurring care' : 'Recurring care'}: ${frequencyMatch.annualOccurrences} visits/year x ${formatWholeDollarAmount(costPerVisit)} = ${formatWholeDollarAmount(annualizedCost)}.`,
+      )
+      return total + annualizedCost
+    }
+
+    if (oneTimeCost !== null) {
+      extractedAssumptions.push(`One-time cost: ${formatWholeDollarAmount(oneTimeCost)}.`)
+      return total + oneTimeCost
+    }
+
+    return total
+  }, 0)
+
+  const extractedItemCount = clauses.reduce((count, clause) => {
+    const hasRecurringItem =
+      getRecurringAnnualOccurrences(clause) !== null &&
+      getRecurringCostPerVisit(clause) !== null
+    const hasOneTimeItem = getOneTimeCost(clause) !== null
+
+    return count + (hasRecurringItem || hasOneTimeItem ? 1 : 0)
+  }, 0)
+
+  return {
+    estimationMode: extractedItemCount > 0 ? 'extracted' : 'inferred',
+    extractedAnnualSpend,
+    extractedItemCount,
+    hasFuzzyWording: fuzzyEstimatePattern.test(normalizedInput),
+    extractedAssumptions,
+  }
+}
+
+export function extractRecurringAnnualSpend(userInput = '') {
+  return analyzeScenarioCostEstimate(userInput).extractedAnnualSpend
+}
+
+function normalizeConfidence(confidence) {
+  return Math.min(1, Math.max(0, Number.isFinite(confidence) ? confidence : 0))
+}
+
+function hasExplicitChronicEvidence(userInput) {
+  const normalizedInput = typeof userInput === 'string' ? userInput.trim() : ''
+  return explicitChronicEvidencePatterns.some((pattern) => pattern.test(normalizedInput))
 }
 
 export function logAiScenarioEvent(level, event, details = {}) {
@@ -227,26 +427,54 @@ export function buildAiScenarioRequest(payload, model = 'gpt-4o-mini') {
 export function normalizeAiScenarioInterpretation(
   interpretation,
   coverageType = 'individual',
+  costEstimate = {
+    estimationMode: 'inferred',
+    extractedAnnualSpend: 0,
+    hasFuzzyWording: false,
+    extractedAssumptions: [],
+  },
+  userInput = '',
 ) {
-  const normalizedSpend = Math.max(
+  const normalizedModelSpend = Math.max(
     0,
     Number.isFinite(interpretation.estimatedAnnualMedicalSpend)
       ? interpretation.estimatedAnnualMedicalSpend
       : 0,
   )
+  const normalizedExtractedSpend = Math.max(
+    0,
+    Number.isFinite(costEstimate.extractedAnnualSpend)
+      ? costEstimate.extractedAnnualSpend
+      : 0,
+  )
   const spendFloor =
     scenarioSpendFloors[coverageType]?.[interpretation.scenarioType] ?? 0
+  const estimatedAnnualMedicalSpend =
+    costEstimate.estimationMode === 'extracted'
+      ? normalizedExtractedSpend
+      : Math.max(normalizedModelSpend, spendFloor)
+
+  // For explicit recurring-cost prompts (extracted mode), reclassify chronic_condition to moderate
+  // unless there is explicit chronic condition evidence in the user input
+  let scenarioType = interpretation.scenarioType
+  if (
+    costEstimate.estimationMode === 'extracted' &&
+    scenarioType === 'chronic_condition' &&
+    !hasExplicitChronicEvidence(userInput)
+  ) {
+    scenarioType = 'moderate'
+  }
 
   return {
-    scenarioType: interpretation.scenarioType,
-    estimatedAnnualMedicalSpend: Math.max(normalizedSpend, spendFloor),
-    assumptions: Array.isArray(interpretation.assumptions)
-      ? interpretation.assumptions.filter(Boolean)
-      : [],
-    confidence: Math.min(
-      1,
-      Math.max(0, Number.isFinite(interpretation.confidence) ? interpretation.confidence : 0),
-    ),
+    scenarioType,
+    estimatedAnnualMedicalSpend,
+    assumptions:
+      costEstimate.estimationMode === 'extracted'
+        ? costEstimate.extractedAssumptions
+        : Array.isArray(interpretation.assumptions)
+          ? interpretation.assumptions.filter(Boolean)
+          : [],
+    confidence: normalizeConfidence(interpretation.confidence),
   }
 }
 
@@ -254,6 +482,7 @@ export function extractAiScenarioInterpretation(
   response,
   normalizeScenarioInterpretation,
   coverageType = 'individual',
+  userInput = '',
 ) {
   const toolCall = response.output?.find(
     (item) =>
@@ -285,7 +514,13 @@ export function extractAiScenarioInterpretation(
     throw error
   }
 
-  const normalized = normalizeScenarioInterpretation(parsedArguments, coverageType)
+  const costEstimate = analyzeScenarioCostEstimate(userInput)
+  const normalized = normalizeScenarioInterpretation(
+    parsedArguments,
+    coverageType,
+    costEstimate,
+    userInput,
+  )
   if (!allowedScenarioTypes.includes(normalized.scenarioType)) {
     const error = new Error('The AI response normalization failed.')
     error.code = 'normalization_failed'
@@ -352,6 +587,7 @@ export async function requestAiScenarioInterpretationFromOpenAi({
         openAiPayload,
         normalizeAiScenarioInterpretation,
         payload.coverageType,
+        payload.userInput,
       )
     } catch (error) {
       const isTimeout =
