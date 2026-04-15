@@ -5,29 +5,13 @@ export const maxSerializedPayloadSize = 12000
 export const openAiTimeoutMs = 8000
 
 const allowedScenarioTypes = [
+  'custom',
   'healthy',
   'moderate',
   'maternity',
   'chronic_condition',
   'major_event',
 ]
-
-const scenarioSpendFloors = {
-  individual: {
-    healthy: 500,
-    moderate: 3000,
-    chronic_condition: 8000,
-    maternity: 12000,
-    major_event: 20000,
-  },
-  family: {
-    healthy: 1500,
-    moderate: 8000,
-    chronic_condition: 12000,
-    maternity: 18000,
-    major_event: 30000,
-  },
-}
 
 const allowedPlanFields = [
   'name',
@@ -58,21 +42,37 @@ const recurringFrequencyMatchers = [
     pattern:
       /\b(?:weekly|every week|once a week|1x a week|one time a week|per week)\b/i,
     annualOccurrences: 52,
+    assumptionLabel: '52 visits/year',
   },
   {
     pattern:
       /\b(?:biweekly|bi-weekly|every other week|every two weeks|once every two weeks)\b/i,
     annualOccurrences: 26,
+    assumptionLabel: '26 visits/year',
   },
   {
     pattern:
       /\b(?:twice a month|two times a month|2x a month|semi-monthly|semimonthly)\b/i,
     annualOccurrences: 24,
+    assumptionLabel: '24 visits/year',
   },
   {
     pattern:
       /\b(?:monthly|every month|once a month|1x a month|per month)\b/i,
     annualOccurrences: 12,
+    assumptionLabel: '12 visits/year',
+  },
+  {
+    pattern:
+      /\b(?:every other month|every two months|once every two months|every 2 months|bimonthly|bi-monthly)\b/i,
+    annualOccurrences: 6,
+    assumptionLabel: '6 visits/year',
+  },
+  {
+    pattern:
+      /\b(?:quarterly|once a quarter|every quarter|per quarter|every 3 months|every three months|once every 3 months|once every three months)\b/i,
+    annualOccurrences: 4,
+    assumptionLabel: '4 visits/year',
   },
 ]
 
@@ -90,7 +90,7 @@ const explicitChronicEvidencePatterns = [
   /\bchronic\s+(?:condition|disease|illness|care|management)\b/i,
   /\blong[- ]?term\s+(?:condition|disease|illness|care|management)\b/i,
   /\bongoing\s+disease\b/i,
-  /\b(?:diabetes|asthma|hypertension|high blood pressure|copd|lupus|rheumatoid arthritis|heart disease|cancer|crohn|ulcerative colitis|cystic fibrosis|sickle cell|multiple sclerosis|parkinson|epilepsy|thyroid|bipolar|schizophrenia|depression|anxiety disorder)\b/i,
+  /\b(?:diabetes|asthma|hypertension|high blood pressure|copd|lupus|rheumatoid arthritis|heart disease|cancer|crohn(?:['’]s)?(?: disease)?|ulcerative colitis|cystic fibrosis|sickle cell|multiple sclerosis|parkinson(?:['’]s)?|epilepsy|thyroid|bipolar|schizophrenia|depression|anxiety disorder|chronic kidney disease)\b/i,
 ]
 
 function isPlainObject(value) {
@@ -110,7 +110,69 @@ function formatWholeDollarAmount(amount) {
   return `$${Math.round(amount).toLocaleString()}`
 }
 
+function getBoundedRecurringOccurrences(text) {
+  const normalizedText = typeof text === 'string' ? text.trim() : ''
+  const durationMatch = normalizedText.match(/\bfor\s+(\d+)\s+(weeks?|months?)\b/i)
+
+  if (!durationMatch) {
+    return null
+  }
+
+  const duration = Number(durationMatch[1])
+  const durationUnit = durationMatch[2].toLowerCase()
+
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return null
+  }
+
+  const cadenceMatchers = [
+    {
+      pattern:
+        /\b(?:twice a week|two times a week|2x a week|two visits a week|two appointments a week)\b/i,
+      unit: 'week',
+      occurrencesPerUnit: 2,
+    },
+    {
+      pattern:
+        /\b(?:once a week|weekly|every week|1x a week|one time a week)\b/i,
+      unit: 'week',
+      occurrencesPerUnit: 1,
+    },
+    {
+      pattern:
+        /\b(?:twice a month|two times a month|2x a month)\b/i,
+      unit: 'month',
+      occurrencesPerUnit: 2,
+    },
+    {
+      pattern:
+        /\b(?:once a month|monthly|every month|1x a month)\b/i,
+      unit: 'month',
+      occurrencesPerUnit: 1,
+    },
+  ]
+
+  for (const matcher of cadenceMatchers) {
+    if (!matcher.pattern.test(normalizedText) || matcher.unit !== durationUnit.replace(/s$/, '')) {
+      continue
+    }
+
+    const totalOccurrences = matcher.occurrencesPerUnit * duration
+    return {
+      annualOccurrences: totalOccurrences,
+      assumptionLabel: `${totalOccurrences} visits`,
+    }
+  }
+
+  return null
+}
+
 function getRecurringAnnualOccurrences(text) {
+  const boundedOccurrences = getBoundedRecurringOccurrences(text)
+  if (boundedOccurrences) {
+    return boundedOccurrences
+  }
+
   for (const matcher of recurringFrequencyMatchers) {
     if (matcher.pattern.test(text)) {
       return matcher
@@ -125,7 +187,11 @@ function getRecurringCostPerVisit(text) {
     /\bcosts?\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
     /\beach\s+(?:visit|appointment|session)\s+costs?\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
     /\beach\s+(?:visit|appointment|session)\s+is\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
+    /\beach\s+time\s+costs?\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
+    /\bit\s+costs?\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
     /\$\s?([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:each|each visit|each appointment)\b/i,
+    /\$\s?([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:each time|per session|per visit|per appointment)\b/i,
+    /\bfor\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\b/i,
     /\$\s?([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:per visit|per appointment)\b/i,
     /\bat\s+\$([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:each|per visit|per appointment)?\b/i,
   ]
@@ -217,7 +283,7 @@ export function analyzeScenarioCostEstimate(userInput = '') {
     if (frequencyMatch !== null && costPerVisit !== null) {
       const annualizedCost = frequencyMatch.annualOccurrences * costPerVisit
       extractedAssumptions.push(
-        `${frequencyMatch.pattern.source.includes('weekly') ? 'Recurring care' : 'Recurring care'}: ${frequencyMatch.annualOccurrences} visits/year x ${formatWholeDollarAmount(costPerVisit)} = ${formatWholeDollarAmount(annualizedCost)}.`,
+        `Recurring care: ${frequencyMatch.assumptionLabel} x ${formatWholeDollarAmount(costPerVisit)} = ${formatWholeDollarAmount(annualizedCost)}.`,
       )
       return total + annualizedCost
     }
@@ -372,7 +438,7 @@ export function buildAiScenarioRequest(payload, model = 'gpt-4o-mini') {
       'Translate a plain-English healthcare scenario into structured insurance spending inputs.',
       'You are not the calculator and must not return plan cost comparisons, recommended winners, rankings, or plan totals.',
       'Always respond by calling the provided function exactly once.',
-      'Use only these scenario types: healthy, moderate, maternity, chronic_condition, major_event.',
+      'Use only these scenario types: custom, healthy, moderate, maternity, chronic_condition, major_event.',
       'Confidence must be a number from 0 to 1.',
       'Assumptions should be short, concrete, and user-friendly.',
     ].join(' '),
@@ -447,18 +513,22 @@ export function normalizeAiScenarioInterpretation(
       ? costEstimate.extractedAnnualSpend
       : 0,
   )
-  const spendFloor =
-    scenarioSpendFloors[coverageType]?.[interpretation.scenarioType] ?? 0
+  // AI freeform interpretation keeps classification separate from spend.
+  // When we can extract recurring or one-time costs, use direct arithmetic.
+  // Otherwise keep the model's spend estimate as-is. Preset floors belong to
+  // explicit UI preset selection, not consultant output normalization.
   const estimatedAnnualMedicalSpend =
     costEstimate.estimationMode === 'extracted'
       ? normalizedExtractedSpend
-      : Math.max(normalizedModelSpend, spendFloor)
+      : normalizedModelSpend
 
-  // For explicit recurring-cost prompts (extracted mode), reclassify chronic_condition to moderate
-  // unless there is explicit chronic condition evidence in the user input
+  // When explicit utilization math is available, this is a custom scenario:
+  // classification stays separate from spend derivation, and preset scenario
+  // floors never apply.
   let scenarioType = interpretation.scenarioType
-  if (
-    costEstimate.estimationMode === 'extracted' &&
+  if (costEstimate.estimationMode === 'extracted') {
+    scenarioType = 'custom'
+  } else if (
     scenarioType === 'chronic_condition' &&
     !hasExplicitChronicEvidence(userInput)
   ) {
@@ -470,6 +540,8 @@ export function normalizeAiScenarioInterpretation(
     estimatedAnnualMedicalSpend,
     assumptions:
       costEstimate.estimationMode === 'extracted'
+        // When we can extract concrete costs, keep the arithmetic-based explanation
+        // and do not let the scenario label override the explicit spend.
         ? costEstimate.extractedAssumptions
         : Array.isArray(interpretation.assumptions)
           ? interpretation.assumptions.filter(Boolean)

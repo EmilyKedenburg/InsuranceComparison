@@ -7,6 +7,7 @@ export const consultantDisclaimer =
 const scenarioSpendFloors: Record<CoverageType, Record<ScenarioInterpretation['scenarioType'], number>> =
   {
     individual: {
+      custom: 0,
       healthy: 500,
       moderate: 3000,
       chronic_condition: 8000,
@@ -14,6 +15,7 @@ const scenarioSpendFloors: Record<CoverageType, Record<ScenarioInterpretation['s
       major_event: 20000,
     },
     family: {
+      custom: 0,
       healthy: 1500,
       moderate: 8000,
       chronic_condition: 12000,
@@ -33,16 +35,21 @@ export function normalizeScenarioInterpretation(
       : 0,
   )
 
+  // Explicitly extracted spends should stay literal. Floors are only for
+  // inferred estimates where the prompt does not provide concrete arithmetic.
+  const estimatedAnnualMedicalSpend =
+    interpretation.estimationMode === 'extracted'
+      ? normalizedSpend
+      : Math.max(normalizedSpend, scenarioSpendFloors[coverageType][interpretation.scenarioType])
+
   return {
     scenarioType: interpretation.scenarioType,
-    estimatedAnnualMedicalSpend: Math.max(
-      normalizedSpend,
-      scenarioSpendFloors[coverageType][interpretation.scenarioType],
-    ),
+    estimatedAnnualMedicalSpend,
     assumptions: interpretation.assumptions.filter(Boolean),
     confidence: Math.min(
       1,
       Math.max(0, Number.isFinite(interpretation.confidence) ? interpretation.confidence : 0),
     ),
+    estimationMode: interpretation.estimationMode ?? 'inferred',
   }
 }

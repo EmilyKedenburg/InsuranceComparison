@@ -1,6 +1,7 @@
 import type { CoverageType, InsurancePlan } from './insurance'
 
 export type ScenarioType =
+  | 'custom'
   | 'healthy'
   | 'moderate'
   | 'maternity'
@@ -12,6 +13,7 @@ export interface ScenarioInterpretation {
   estimatedAnnualMedicalSpend: number
   assumptions: string[]
   confidence: number
+  estimationMode?: 'extracted' | 'inferred'
 }
 
 export interface ScenarioInterpretationRequest {

@@ -2,6 +2,7 @@ export const interpretScenarioToolName = 'interpret_insurance_scenario';
 export const consultantDisclaimer = 'This is a financial simulation, not medical advice. Final costs depend on your insurer, the care you receive, and how claims are processed.';
 const scenarioSpendFloors = {
     individual: {
+        custom: 0,
         healthy: 500,
         moderate: 3000,
         chronic_condition: 8000,
@@ -9,6 +10,7 @@ const scenarioSpendFloors = {
         major_event: 20000,
     },
     family: {
+        custom: 0,
         healthy: 1500,
         moderate: 8000,
         chronic_condition: 12000,
@@ -31,7 +33,7 @@ export function buildScenarioInterpretationRequest(request, model = 'gpt-5-mini'
             'Your job is to translate a plain-English healthcare scenario into structured insurance spending inputs.',
             'You are not the calculator and must not return plan cost comparisons or final plan totals.',
             'Always respond by calling the provided function exactly once.',
-            'Use only these scenario types: healthy, moderate, maternity, chronic_condition, major_event.',
+            'Use only these scenario types: custom, healthy, moderate, maternity, chronic_condition, major_event.',
             'Confidence must be a number from 0 to 1.',
             'Assumptions should be short, concrete, and user-friendly.',
         ].join(' '),
@@ -59,6 +61,7 @@ export function buildScenarioInterpretationRequest(request, model = 'gpt-5-mini'
                         scenarioType: {
                             type: 'string',
                             enum: [
+                                'custom',
                                 'healthy',
                                 'moderate',
                                 'maternity',
@@ -91,11 +94,17 @@ export function normalizeScenarioInterpretation(interpretation, coverageType = '
     const normalizedSpend = Math.max(0, Number.isFinite(interpretation.estimatedAnnualMedicalSpend)
         ? interpretation.estimatedAnnualMedicalSpend
         : 0);
+    // Explicitly extracted spends should stay literal. Floors are only for
+    // inferred estimates where the prompt does not provide concrete arithmetic.
+    const estimatedAnnualMedicalSpend = interpretation.estimationMode === 'extracted'
+        ? normalizedSpend
+        : Math.max(normalizedSpend, scenarioSpendFloors[coverageType][interpretation.scenarioType]);
     return {
         scenarioType: interpretation.scenarioType,
-        estimatedAnnualMedicalSpend: Math.max(normalizedSpend, scenarioSpendFloors[coverageType][interpretation.scenarioType]),
+        estimatedAnnualMedicalSpend,
         assumptions: interpretation.assumptions.filter(Boolean),
         confidence: Math.min(1, Math.max(0, Number.isFinite(interpretation.confidence) ? interpretation.confidence : 0)),
+        estimationMode: interpretation.estimationMode ?? 'inferred',
     };
 }
 export function extractScenarioInterpretation(response) {
