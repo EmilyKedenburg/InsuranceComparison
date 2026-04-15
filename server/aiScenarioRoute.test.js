@@ -111,7 +111,7 @@ describe('aiScenarioRoute', () => {
     expect(response.statusCode).toBe(200)
     expect(response.payload).toEqual({
       scenarioType: 'moderate',
-      estimatedAnnualMedicalSpend: 5000,
+      estimatedAnnualMedicalSpend: 3000,
       assumptions: ['Routine visits'],
       confidence: 0.8,
     })

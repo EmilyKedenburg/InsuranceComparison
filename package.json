@@ -9,6 +9,7 @@
     "dev:server": "node server/index.js",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "ai:regression": "node scripts/runAiConsultantRegression.js",
     "preview": "vite preview",
     "start:server": "node server/index.js"
   },

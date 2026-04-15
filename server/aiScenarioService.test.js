@@ -49,6 +49,7 @@ describe('aiScenarioService', () => {
       type: 'function',
       name: interpretScenarioToolName,
     })
+    expect(request.temperature).toBe(0)
     expect(request.max_output_tokens).toBe(400)
     expect(request.tools).toHaveLength(1)
   })
@@ -110,13 +111,13 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'maternity',
-      estimatedAnnualMedicalSpend: 0,
+      estimatedAnnualMedicalSpend: 12000,
       assumptions: ['Prenatal visits', 'Delivery'],
       confidence: 1,
     })
   })
 
-  it('keeps the model spend as-is for inferred ai scenarios instead of applying a floor', () => {
+  it('uses a deterministic chronic-condition heuristic fallback when spend cannot be derived', () => {
     const interpretation = normalizeAiScenarioInterpretation(
       {
         scenarioType: 'chronic_condition',
@@ -127,7 +128,7 @@ describe('aiScenarioService', () => {
       'individual',
       {
         estimationMode: 'inferred',
-        extractedAnnualSpend: 0,
+        extractedAnnualSpend: null,
         hasFuzzyWording: false,
         extractedAssumptions: [],
       },
@@ -136,13 +137,13 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'chronic_condition',
-      estimatedAnnualMedicalSpend: 2400,
+      estimatedAnnualMedicalSpend: 8000,
       assumptions: ['Ongoing specialist care', 'Recurring prescriptions'],
       confidence: 0.82,
     })
   })
 
-  it('keeps higher model estimates untouched for inferred ai scenarios', () => {
+  it('uses a deterministic major-event heuristic fallback when spend cannot be derived', () => {
     const interpretation = normalizeAiScenarioInterpretation(
       {
         scenarioType: 'major_event',
@@ -155,13 +156,13 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'major_event',
-      estimatedAnnualMedicalSpend: 18000,
+      estimatedAnnualMedicalSpend: 30000,
       assumptions: ['Emergency care', 'Hospital stay'],
       confidence: 0.74,
     })
   })
 
-  it('keeps higher spend estimates when they already exceed prior floor values', () => {
+  it('uses the deterministic heuristic fallback instead of variable inferred model spend', () => {
     const interpretation = normalizeAiScenarioInterpretation(
       {
         scenarioType: 'major_event',
@@ -172,7 +173,7 @@ describe('aiScenarioService', () => {
       'family',
     )
 
-    expect(interpretation.estimatedAnnualMedicalSpend).toBe(50000)
+    expect(interpretation.estimatedAnnualMedicalSpend).toBe(30000)
     expect(interpretation.assumptions).toEqual(['Complex hospitalization'])
     expect(interpretation.confidence).toBe(0.91)
   })
@@ -521,10 +522,76 @@ describe('aiScenarioService', () => {
     ).toBe(0)
   })
 
+  it('returns null derived spend when utilization is present without explicit cost', () => {
+    expect(analyzeScenarioCostEstimate('I see a therapist weekly.')).toMatchObject({
+      estimationMode: 'inferred',
+      extractedAnnualSpend: null,
+      fallbackReason: 'frequency_without_explicit_cost',
+    })
+  })
+
   it('returns zero when a per-visit cost is present without a recurring frequency', () => {
     expect(
       extractRecurringAnnualSpend('My therapy appointments cost $100 each.'),
     ).toBe(0)
+  })
+
+  it('does not derive a custom spend from weekly therapy without an explicit price', () => {
+    const interpretation = extractAiScenarioInterpretation(
+      {
+        output: [
+          {
+            type: 'function_call',
+            name: interpretScenarioToolName,
+            arguments: JSON.stringify({
+              scenarioType: 'moderate',
+              estimatedAnnualMedicalSpend: 13200,
+              assumptions: ['Weekly therapy'],
+              confidence: 0.77,
+            }),
+          },
+        ],
+      },
+      normalizeAiScenarioInterpretation,
+      'individual',
+      'I see a therapist weekly.',
+    )
+
+    expect(interpretation).toEqual({
+      scenarioType: 'moderate',
+      estimatedAnnualMedicalSpend: 3000,
+      assumptions: ['Weekly therapy'],
+      confidence: 0.77,
+    })
+  })
+
+  it('does not derive a custom spend from regular pt appointments without an explicit price', () => {
+    const interpretation = extractAiScenarioInterpretation(
+      {
+        output: [
+          {
+            type: 'function_call',
+            name: interpretScenarioToolName,
+            arguments: JSON.stringify({
+              scenarioType: 'moderate',
+              estimatedAnnualMedicalSpend: 9000,
+              assumptions: ['Regular PT appointments'],
+              confidence: 0.75,
+            }),
+          },
+        ],
+      },
+      normalizeAiScenarioInterpretation,
+      'individual',
+      'I have regular PT appointments.',
+    )
+
+    expect(interpretation).toEqual({
+      scenarioType: 'moderate',
+      estimatedAnnualMedicalSpend: 3000,
+      assumptions: ['Regular PT appointments'],
+      confidence: 0.75,
+    })
   })
 
   it('uses recurring usage extraction when it exceeds the model spend estimate', () => {
@@ -585,7 +652,7 @@ describe('aiScenarioService', () => {
     })
   })
 
-  it('keeps vague prompts on the model-estimate path without scenario floors', () => {
+  it('uses the chronic heuristic fallback for vague prompts with explicit chronic language', () => {
     const interpretation = extractAiScenarioInterpretation(
       {
         output: [
@@ -608,7 +675,7 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'chronic_condition',
-      estimatedAnnualMedicalSpend: 1000,
+      estimatedAnnualMedicalSpend: 8000,
       assumptions: ['Monthly therapy'],
       confidence: 0.8,
     })
@@ -643,6 +710,64 @@ describe('aiScenarioService', () => {
     })
   })
 
+  it('uses a nonzero chronic-condition heuristic fallback when no explicit cost is present', () => {
+    const interpretation = extractAiScenarioInterpretation(
+      {
+        output: [
+          {
+            type: 'function_call',
+            name: interpretScenarioToolName,
+            arguments: JSON.stringify({
+              scenarioType: 'chronic_condition',
+              estimatedAnnualMedicalSpend: 0,
+              assumptions: ['Diabetes management care'],
+              confidence: 0.83,
+            }),
+          },
+        ],
+      },
+      normalizeAiScenarioInterpretation,
+      'individual',
+      'I have diabetes and need ongoing specialist care.',
+    )
+
+    expect(interpretation).toEqual({
+      scenarioType: 'chronic_condition',
+      estimatedAnnualMedicalSpend: 8000,
+      assumptions: ['Diabetes management care'],
+      confidence: 0.83,
+    })
+  })
+
+  it('uses a nonzero maternity heuristic fallback when no explicit cost is present', () => {
+    const interpretation = extractAiScenarioInterpretation(
+      {
+        output: [
+          {
+            type: 'function_call',
+            name: interpretScenarioToolName,
+            arguments: JSON.stringify({
+              scenarioType: 'maternity',
+              estimatedAnnualMedicalSpend: 0,
+              assumptions: ['Pregnancy planning'],
+              confidence: 0.8,
+            }),
+          },
+        ],
+      },
+      normalizeAiScenarioInterpretation,
+      'individual',
+      'I’m planning to have a baby this year.',
+    )
+
+    expect(interpretation).toEqual({
+      scenarioType: 'maternity',
+      estimatedAnnualMedicalSpend: 12000,
+      assumptions: ['Pregnancy planning'],
+      confidence: 0.8,
+    })
+  })
+
   it('tracks extracted estimation mode for explicit cost prompts', () => {
     expect(
       analyzeScenarioCostEstimate('I have weekly therapy appointments that cost $100'),
@@ -650,6 +775,70 @@ describe('aiScenarioService', () => {
       estimationMode: 'extracted',
       extractedAnnualSpend: 5200,
       extractedItemCount: 1,
+    })
+  })
+
+  it('returns stable results for repeated weekly-therapy parsing without explicit cost', () => {
+    const runs = Array.from({ length: 5 }, () =>
+      extractAiScenarioInterpretation(
+        {
+          output: [
+            {
+              type: 'function_call',
+              name: interpretScenarioToolName,
+              arguments: JSON.stringify({
+                scenarioType: 'moderate',
+                estimatedAnnualMedicalSpend: 10400,
+                assumptions: ['Weekly therapy'],
+                confidence: 0.7,
+              }),
+            },
+          ],
+        },
+        normalizeAiScenarioInterpretation,
+        'individual',
+        'I have chronic stress and see a therapist weekly.',
+      ),
+    )
+
+    expect(new Set(runs.map((run) => JSON.stringify(run))).size).toBe(1)
+    expect(runs[0]).toEqual({
+      scenarioType: 'moderate',
+      estimatedAnnualMedicalSpend: 3000,
+      assumptions: ['Weekly therapy'],
+      confidence: 0.7,
+    })
+  })
+
+  it('returns stable results for repeated pt parsing without explicit cost', () => {
+    const runs = Array.from({ length: 5 }, () =>
+      extractAiScenarioInterpretation(
+        {
+          output: [
+            {
+              type: 'function_call',
+              name: interpretScenarioToolName,
+              arguments: JSON.stringify({
+                scenarioType: 'moderate',
+                estimatedAnnualMedicalSpend: 20800,
+                assumptions: ['Back pain PT'],
+                confidence: 0.69,
+              }),
+            },
+          ],
+        },
+        normalizeAiScenarioInterpretation,
+        'individual',
+        'I have ongoing back pain and go to PT every other week.',
+      ),
+    )
+
+    expect(new Set(runs.map((run) => JSON.stringify(run))).size).toBe(1)
+    expect(runs[0]).toEqual({
+      scenarioType: 'moderate',
+      estimatedAnnualMedicalSpend: 3000,
+      assumptions: ['Back pain PT'],
+      confidence: 0.69,
     })
   })
 
@@ -833,7 +1022,7 @@ describe('aiScenarioService', () => {
 
     expect(analysis).toMatchObject({
       estimationMode: 'inferred',
-      extractedAnnualSpend: 0,
+      extractedAnnualSpend: null,
       hasFuzzyWording: true,
     })
 
@@ -859,7 +1048,7 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'moderate',
-      estimatedAnnualMedicalSpend: 1200,
+      estimatedAnnualMedicalSpend: 3000,
       assumptions: ['Specialist visits'],
       confidence: 0.8,
     })
@@ -888,7 +1077,7 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'moderate',
-      estimatedAnnualMedicalSpend: 1200,
+      estimatedAnnualMedicalSpend: 3000,
       assumptions: ['Therapy and follow-up visits'],
       confidence: 0.71,
     })
@@ -917,7 +1106,7 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'chronic_condition',
-      estimatedAnnualMedicalSpend: 2500,
+      estimatedAnnualMedicalSpend: 8000,
       assumptions: ['Recurring condition management'],
       confidence: 0.74,
     })
@@ -1004,7 +1193,7 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'chronic_condition',
-      estimatedAnnualMedicalSpend: 6400,
+      estimatedAnnualMedicalSpend: 8000,
       assumptions: ['Diabetes management care'],
       confidence: 0.88,
     })
@@ -1033,7 +1222,7 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'chronic_condition',
-      estimatedAnnualMedicalSpend: 7800,
+      estimatedAnnualMedicalSpend: 8000,
       assumptions: ['Ongoing GI specialist care'],
       confidence: 0.84,
     })
@@ -1120,7 +1309,7 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'chronic_condition',
-      estimatedAnnualMedicalSpend: 1000,
+      estimatedAnnualMedicalSpend: 8000,
       assumptions: ['Monthly therapy'],
       confidence: 0.8,
     })
@@ -1149,7 +1338,7 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'moderate',
-      estimatedAnnualMedicalSpend: 5000,
+      estimatedAnnualMedicalSpend: 3000,
       assumptions: ['Prenatal planning'],
       confidence: 0.7,
     })
@@ -1178,7 +1367,7 @@ describe('aiScenarioService', () => {
 
     expect(interpretation).toEqual({
       scenarioType: 'moderate',
-      estimatedAnnualMedicalSpend: 7000,
+      estimatedAnnualMedicalSpend: 3000,
       assumptions: ['PT for knee injury'],
       confidence: 0.72,
     })

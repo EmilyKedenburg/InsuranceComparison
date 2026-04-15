@@ -13,6 +13,25 @@ const allowedScenarioTypes = [
   'major_event',
 ]
 
+const scenarioHeuristicEstimates = {
+  individual: {
+    custom: 0,
+    healthy: 500,
+    moderate: 3000,
+    chronic_condition: 8000,
+    maternity: 12000,
+    major_event: 20000,
+  },
+  family: {
+    custom: 0,
+    healthy: 1500,
+    moderate: 8000,
+    chronic_condition: 12000,
+    maternity: 18000,
+    major_event: 30000,
+  },
+}
+
 const allowedPlanFields = [
   'name',
   'monthlyPremium',
@@ -108,6 +127,10 @@ function parseDollarAmount(rawAmount) {
 
 function formatWholeDollarAmount(amount) {
   return `$${Math.round(amount).toLocaleString()}`
+}
+
+function shouldLogAiScenarioDebug() {
+  return String(process.env.AI_SCENARIO_DEBUG ?? '').toLowerCase() === 'true'
 }
 
 function getBoundedRecurringOccurrences(text) {
@@ -266,44 +289,80 @@ export function analyzeScenarioCostEstimate(userInput = '') {
   if (!normalizedInput) {
     return {
       estimationMode: 'inferred',
-      extractedAnnualSpend: 0,
+      extractedAnnualSpend: null,
       extractedItemCount: 0,
       hasFuzzyWording: false,
       extractedAssumptions: [],
+      fallbackReason: 'empty_input',
+      parseTrace: {
+        normalizedPrompt: normalizedInput,
+        detectedCadence: [],
+        detectedDuration: [],
+        detectedExplicitCosts: [],
+        detectedVisitCounts: [],
+        derivedSpend: null,
+        fallbackUsed: true,
+      },
     }
   }
 
   const clauses = mergeRelatedCostClauses(splitCostClauses(normalizedInput))
   const extractedAssumptions = []
-  const extractedAnnualSpend = clauses.reduce((total, clause) => {
+  const detectedCadence = []
+  const detectedDuration = []
+  const detectedExplicitCosts = []
+  const detectedVisitCounts = []
+  let hasFrequencyWithoutExplicitCost = false
+  const extractedLineItems = clauses.reduce((items, clause) => {
     const frequencyMatch = getRecurringAnnualOccurrences(clause)
     const costPerVisit = getRecurringCostPerVisit(clause)
     const oneTimeCost = getOneTimeCost(clause)
 
+    if (frequencyMatch !== null) {
+      detectedCadence.push(frequencyMatch.assumptionLabel)
+      detectedVisitCounts.push(frequencyMatch.annualOccurrences)
+    }
+
+    const durationMatch = clause.match(/\bfor\s+(\d+)\s+(weeks?|months?)\b/i)
+    if (durationMatch) {
+      detectedDuration.push(durationMatch[0].trim())
+    }
+
     if (frequencyMatch !== null && costPerVisit !== null) {
       const annualizedCost = frequencyMatch.annualOccurrences * costPerVisit
+      detectedExplicitCosts.push(costPerVisit)
       extractedAssumptions.push(
         `Recurring care: ${frequencyMatch.assumptionLabel} x ${formatWholeDollarAmount(costPerVisit)} = ${formatWholeDollarAmount(annualizedCost)}.`,
       )
-      return total + annualizedCost
+      items.push(annualizedCost)
+      return items
+    }
+
+    if (frequencyMatch !== null && costPerVisit === null) {
+      hasFrequencyWithoutExplicitCost = true
     }
 
     if (oneTimeCost !== null) {
+      detectedExplicitCosts.push(oneTimeCost)
       extractedAssumptions.push(`One-time cost: ${formatWholeDollarAmount(oneTimeCost)}.`)
-      return total + oneTimeCost
+      items.push(oneTimeCost)
+      return items
     }
 
-    return total
-  }, 0)
+    return items
+  }, [])
 
-  const extractedItemCount = clauses.reduce((count, clause) => {
-    const hasRecurringItem =
-      getRecurringAnnualOccurrences(clause) !== null &&
-      getRecurringCostPerVisit(clause) !== null
-    const hasOneTimeItem = getOneTimeCost(clause) !== null
-
-    return count + (hasRecurringItem || hasOneTimeItem ? 1 : 0)
-  }, 0)
+  const extractedItemCount = extractedLineItems.length
+  const extractedAnnualSpend =
+    extractedItemCount > 0
+      ? extractedLineItems.reduce((total, amount) => total + amount, 0)
+      : null
+  const fallbackReason =
+    extractedItemCount > 0
+      ? null
+      : hasFrequencyWithoutExplicitCost
+        ? 'frequency_without_explicit_cost'
+        : 'no_billable_events_detected'
 
   return {
     estimationMode: extractedItemCount > 0 ? 'extracted' : 'inferred',
@@ -311,11 +370,54 @@ export function analyzeScenarioCostEstimate(userInput = '') {
     extractedItemCount,
     hasFuzzyWording: fuzzyEstimatePattern.test(normalizedInput),
     extractedAssumptions,
+    fallbackReason,
+    parseTrace: {
+      normalizedPrompt: normalizedInput,
+      detectedCadence,
+      detectedDuration,
+      detectedExplicitCosts,
+      detectedVisitCounts,
+      derivedSpend: extractedAnnualSpend,
+      fallbackUsed: extractedItemCount === 0,
+    },
+  }
+}
+
+export function buildAiScenarioTrace({
+  interpretation,
+  coverageType = 'individual',
+  userInput = '',
+  costEstimate = analyzeScenarioCostEstimate(userInput),
+} = {}) {
+  const normalizedPrompt = costEstimate.parseTrace?.normalizedPrompt ?? ''
+  const chronicConditionTriggered =
+    interpretation?.scenarioType === 'chronic_condition' || hasExplicitChronicEvidence(userInput)
+  const spendSource =
+    costEstimate.estimationMode === 'extracted' ? 'custom_derived' : 'heuristic_fallback'
+  const classificationSource =
+    costEstimate.estimationMode === 'extracted' ? 'parsed_utilization' : 'heuristic_classification'
+
+  return {
+    coverageType,
+    normalizedPrompt,
+    classificationSource,
+    spendSource,
+    derivedSpend: costEstimate.extractedAnnualSpend,
+    fallbackReason: costEstimate.fallbackReason ?? null,
+    normalizedCadence: costEstimate.parseTrace?.detectedCadence ?? [],
+    normalizedCostPerVisit: costEstimate.parseTrace?.detectedExplicitCosts ?? [],
+    normalizedVisitCount: costEstimate.parseTrace?.detectedVisitCounts ?? [],
+    normalizedDuration: costEstimate.parseTrace?.detectedDuration ?? [],
+    explicitCostDetected: (costEstimate.parseTrace?.detectedExplicitCosts?.length ?? 0) > 0,
+    chronicConditionTriggered,
+    fallbackUsed: costEstimate.estimationMode !== 'extracted',
+    finalScenario: interpretation?.scenarioType ?? null,
+    finalSpend: interpretation?.estimatedAnnualMedicalSpend ?? null,
   }
 }
 
 export function extractRecurringAnnualSpend(userInput = '') {
-  return analyzeScenarioCostEstimate(userInput).extractedAnnualSpend
+  return analyzeScenarioCostEstimate(userInput).extractedAnnualSpend ?? 0
 }
 
 function normalizeConfidence(confidence) {
@@ -432,6 +534,7 @@ export function buildAiScenarioRequest(payload, model = 'gpt-4o-mini') {
 
   return {
     model,
+    temperature: 0,
     max_output_tokens: 400,
     instructions: [
       'You are an insurance scenario interpreter.',
@@ -495,7 +598,7 @@ export function normalizeAiScenarioInterpretation(
   coverageType = 'individual',
   costEstimate = {
     estimationMode: 'inferred',
-    extractedAnnualSpend: 0,
+    extractedAnnualSpend: null,
     hasFuzzyWording: false,
     extractedAssumptions: [],
   },
@@ -513,15 +616,6 @@ export function normalizeAiScenarioInterpretation(
       ? costEstimate.extractedAnnualSpend
       : 0,
   )
-  // AI freeform interpretation keeps classification separate from spend.
-  // When we can extract recurring or one-time costs, use direct arithmetic.
-  // Otherwise keep the model's spend estimate as-is. Preset floors belong to
-  // explicit UI preset selection, not consultant output normalization.
-  const estimatedAnnualMedicalSpend =
-    costEstimate.estimationMode === 'extracted'
-      ? normalizedExtractedSpend
-      : normalizedModelSpend
-
   // When explicit utilization math is available, this is a custom scenario:
   // classification stays separate from spend derivation, and preset scenario
   // floors never apply.
@@ -534,6 +628,13 @@ export function normalizeAiScenarioInterpretation(
   ) {
     scenarioType = 'moderate'
   }
+
+  const heuristicFallbackEstimate =
+    scenarioHeuristicEstimates[coverageType]?.[scenarioType] ?? normalizedModelSpend
+  const estimatedAnnualMedicalSpend =
+    costEstimate.estimationMode === 'extracted'
+      ? normalizedExtractedSpend
+      : heuristicFallbackEstimate
 
   return {
     scenarioType,
@@ -655,12 +756,31 @@ export async function requestAiScenarioInterpretationFromOpenAi({
       }
 
       const openAiPayload = await openAiResponse.json()
-      return extractAiScenarioInterpretation(
+      const interpretation = extractAiScenarioInterpretation(
         openAiPayload,
         normalizeAiScenarioInterpretation,
         payload.coverageType,
         payload.userInput,
       )
+      if (shouldLogAiScenarioDebug()) {
+        const costEstimate = analyzeScenarioCostEstimate(payload.userInput)
+        logEvent('info', 'interpretation_trace', {
+          normalizedPrompt: costEstimate.parseTrace?.normalizedPrompt,
+          detectedCadence: costEstimate.parseTrace?.detectedCadence ?? [],
+          detectedDuration: costEstimate.parseTrace?.detectedDuration ?? [],
+          detectedExplicitCosts: costEstimate.parseTrace?.detectedExplicitCosts ?? [],
+          derivedSpend: costEstimate.extractedAnnualSpend,
+          fallbackUsed: costEstimate.estimationMode !== 'extracted',
+          fallbackReason: costEstimate.fallbackReason ?? null,
+          finalScenario: interpretation.scenarioType,
+          finalSpend: interpretation.estimatedAnnualMedicalSpend,
+          spendSource:
+            costEstimate.estimationMode === 'extracted'
+              ? 'custom_derived'
+              : 'heuristic_fallback',
+        })
+      }
+      return interpretation
     } catch (error) {
       const isTimeout =
         error instanceof Error &&
