@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
+import { pathToFileURL } from 'node:url'
 import {
   analyzeScenarioCostEstimate,
   buildAiScenarioTrace,
@@ -14,11 +15,6 @@ const outputDir = process.env.AI_REGRESSION_OUTPUT_DIR
   : process.cwd()
 const apiKey = process.env.OPENAI_API_KEY
 const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
-
-if (!apiKey) {
-  console.error('Missing OPENAI_API_KEY. Set it before running the AI consultant regression harness.')
-  process.exit(1)
-}
 
 const plans = [
   {
@@ -133,7 +129,7 @@ async function runPrompt(promptConfig, runIndex) {
   }
 }
 
-function summarize(rows) {
+export function summarizeRegressionRows(rows) {
   const countByScenario = rows.reduce((counts, row) => {
     counts[row.scenario] = (counts[row.scenario] ?? 0) + 1
     return counts
@@ -148,22 +144,36 @@ function summarize(rows) {
   }
 
   for (const [id, promptRows] of rowsByPrompt.entries()) {
-    const signatures = new Set(
+    const materialSignatures = new Set(
       promptRows.map((row) =>
         JSON.stringify({
           scenario: row.scenario,
           estimate: row.estimate,
-          confidence: row.confidence,
           spendSource: row.spendSource,
+          classificationSource: row.classificationSource,
+          normalizedCadence: row.normalizedCadence,
+          normalizedCostPerVisit: row.normalizedCostPerVisit,
+          normalizedVisitCount: row.normalizedVisitCount,
+          normalizedDuration: row.normalizedDuration,
           fallbackReason: row.fallbackReason,
         }),
       ),
     )
-    if (signatures.size > 1) {
+    const confidenceSignatures = new Set(promptRows.map((row) => row.confidence))
+    if (materialSignatures.size > 1) {
       unstablePromptIds.push(id)
     }
     for (const row of promptRows) {
-      row.isStableAcrossRuns = signatures.size === 1
+      row.hasMaterialOutputVariance = materialSignatures.size > 1
+      row.hasConfidenceOnlyVariance =
+        materialSignatures.size === 1 && confidenceSignatures.size > 1
+      row.stabilityReason =
+        materialSignatures.size > 1
+          ? 'unstableAcrossRuns'
+          : confidenceSignatures.size > 1
+            ? 'confidenceVarianceOnly'
+            : 'stable'
+      row.isStableAcrossRuns = materialSignatures.size === 1
     }
   }
 
@@ -180,7 +190,10 @@ function summarize(rows) {
     zeroEstimateCount: rows.filter((row) => row.estimate === 0).length,
     customDerivedCount: rows.filter((row) => row.spendSource === 'custom_derived').length,
     chronicConditionCount: rows.filter((row) => row.scenario === 'chronic_condition').length,
-    unstablePromptCount: unstablePromptIds.length,
+    trueUnstablePromptCount: unstablePromptIds.length,
+    confidenceVarianceOnlyCount: Array.from(rowsByPrompt.values()).filter((promptRows) =>
+      promptRows.some((row) => row.hasConfidenceOnlyVariance),
+    ).length,
     unstablePromptIds,
     highestEstimate: estimates.length > 0 ? Math.max(...estimates) : null,
     lowestNonZeroEstimate: nonZeroEstimates.length > 0 ? Math.min(...nonZeroEstimates) : null,
@@ -206,6 +219,9 @@ function buildCsv(rows) {
     'explicitCostDetected',
     'chronicConditionTriggered',
     'isStableAcrossRuns',
+    'stabilityReason',
+    'hasMaterialOutputVariance',
+    'hasConfidenceOnlyVariance',
     'notes',
   ]
 
@@ -230,6 +246,9 @@ function buildCsv(rows) {
         row.explicitCostDetected,
         row.chronicConditionTriggered,
         row.isStableAcrossRuns,
+        row.stabilityReason,
+        row.hasMaterialOutputVariance,
+        row.hasConfidenceOnlyVariance,
         row.notes,
       ]
         .map(csvEscape)
@@ -243,7 +262,8 @@ function buildCsv(rows) {
 function buildMarkdown(summary, rows) {
   const suspiciousRows = rows.filter(
     (row) =>
-      !row.isStableAcrossRuns ||
+      row.hasMaterialOutputVariance ||
+      row.hasConfidenceOnlyVariance ||
       row.estimate === 0 ||
       row.scenario === 'chronic_condition' ||
       row.notes,
@@ -257,7 +277,8 @@ function buildMarkdown(summary, rows) {
     `- Zero estimates: ${summary.zeroEstimateCount}`,
     `- Custom-derived rows: ${summary.customDerivedCount}`,
     `- Chronic-condition rows: ${summary.chronicConditionCount}`,
-    `- Unstable prompts: ${summary.unstablePromptCount}`,
+    `- True unstable prompts: ${summary.trueUnstablePromptCount}`,
+    `- Confidence-only variance prompts: ${summary.confidenceVarianceOnlyCount}`,
     `- Highest estimate: ${summary.highestEstimate ?? 'n/a'}`,
     `- Lowest nonzero estimate: ${summary.lowestNonZeroEstimate ?? 'n/a'}`,
     '',
@@ -267,17 +288,22 @@ function buildMarkdown(summary, rows) {
     '',
     '## Suspicious Results',
     '',
-    '| ID | Run | Scenario | Estimate | Spend Source | Stable | Notes |',
+    '| ID | Run | Scenario | Estimate | Spend Source | Stability | Notes |',
     '| --- | --- | --- | ---: | --- | --- | --- |',
     ...suspiciousRows.map(
       (row) =>
-        `| ${row.id} | ${row.runIndex} | ${row.scenario} | ${row.estimate} | ${row.spendSource} | ${row.isStableAcrossRuns ? 'yes' : 'no'} | ${row.notes || ''} |`,
+        `| ${row.id} | ${row.runIndex} | ${row.scenario} | ${row.estimate} | ${row.spendSource} | ${row.stabilityReason} | ${row.notes || ''} |`,
     ),
     '',
   ].join('\n')
 }
 
 async function main() {
+  if (!apiKey) {
+    console.error('Missing OPENAI_API_KEY. Set it before running the AI consultant regression harness.')
+    process.exit(1)
+  }
+
   const rows = []
 
   for (const promptConfig of aiConsultantManualRegressionPrompts) {
@@ -288,12 +314,16 @@ async function main() {
     }
   }
 
-  const summary = summarize(rows)
+  const summary = summarizeRegressionRows(rows)
   for (const row of rows) {
     const promptConfig = aiConsultantManualRegressionPrompts.find((prompt) => prompt.id === row.id)
     row.notes = buildNotes(promptConfig ?? {}, row)
-    if (!row.isStableAcrossRuns) {
+    if (row.hasMaterialOutputVariance) {
       row.notes = row.notes ? `${row.notes}; unstableAcrossRuns` : 'unstableAcrossRuns'
+    } else if (row.hasConfidenceOnlyVariance) {
+      row.notes = row.notes
+        ? `${row.notes}; confidenceVarianceOnly`
+        : 'confidenceVarianceOnly'
     }
   }
 
@@ -327,7 +357,9 @@ async function main() {
   console.log(`Wrote regression results to ${mdPath}`)
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error)
-  process.exit(1)
-})
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error)
+    process.exit(1)
+  })
+}

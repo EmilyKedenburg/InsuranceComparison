@@ -357,6 +357,18 @@ describe('aiScenarioService', () => {
     ).toBe(5200)
   })
 
+  it('derives spend from explicit visit count and cost', () => {
+    expect(
+      extractRecurringAnnualSpend('I have three specialist visits this year at $250 each.'),
+    ).toBe(750)
+    expect(
+      extractRecurringAnnualSpend('I have 4 follow-up visits at $200 each.'),
+    ).toBe(800)
+    expect(
+      extractRecurringAnnualSpend('I expect 2 specialist visits at $300 each.'),
+    ).toBe(600)
+  })
+
   it('keeps explicit biweekly $100 prompts at 2600 instead of the moderate floor', () => {
     const interpretation = extractAiScenarioInterpretation(
       {
@@ -591,6 +603,35 @@ describe('aiScenarioService', () => {
       estimatedAnnualMedicalSpend: 3000,
       assumptions: ['Regular PT appointments'],
       confidence: 0.75,
+    })
+  })
+
+  it('derives custom spend from explicit count plus cost prompts', () => {
+    const interpretation = extractAiScenarioInterpretation(
+      {
+        output: [
+          {
+            type: 'function_call',
+            name: interpretScenarioToolName,
+            arguments: JSON.stringify({
+              scenarioType: 'moderate',
+              estimatedAnnualMedicalSpend: 0,
+              assumptions: ['Specialist visits'],
+              confidence: 0.78,
+            }),
+          },
+        ],
+      },
+      normalizeAiScenarioInterpretation,
+      'individual',
+      'I have three specialist visits this year at $250 each.',
+    )
+
+    expect(interpretation).toEqual({
+      scenarioType: 'custom',
+      estimatedAnnualMedicalSpend: 750,
+      assumptions: ['Recurring care: 3 visits x $250 = $750.'],
+      confidence: 0.78,
     })
   })
 
@@ -839,6 +880,67 @@ describe('aiScenarioService', () => {
       estimatedAnnualMedicalSpend: 3000,
       assumptions: ['Back pain PT'],
       confidence: 0.69,
+    })
+  })
+
+  it('keeps temporary post-surgery rehab deterministic without explicit cost', () => {
+    const runs = Array.from({ length: 5 }, () =>
+      extractAiScenarioInterpretation(
+        {
+          output: [
+            {
+              type: 'function_call',
+              name: interpretScenarioToolName,
+              arguments: JSON.stringify({
+                scenarioType: 'major_event',
+                estimatedAnnualMedicalSpend: 20000,
+                assumptions: ['Post-surgery rehab'],
+                confidence: 0.74,
+              }),
+            },
+          ],
+        },
+        normalizeAiScenarioInterpretation,
+        'individual',
+        "I'm recovering from surgery and will need PT twice a week for 8 weeks.",
+      ),
+    )
+
+    expect(new Set(runs.map((run) => JSON.stringify(run))).size).toBe(1)
+    expect(runs[0]).toEqual({
+      scenarioType: 'moderate',
+      estimatedAnnualMedicalSpend: 3000,
+      assumptions: ['Post-surgery rehab'],
+      confidence: 0.74,
+    })
+  })
+
+  it('keeps six-week post-surgery rehab deterministic without explicit cost', () => {
+    const interpretation = extractAiScenarioInterpretation(
+      {
+        output: [
+          {
+            type: 'function_call',
+            name: interpretScenarioToolName,
+            arguments: JSON.stringify({
+              scenarioType: 'major_event',
+              estimatedAnnualMedicalSpend: 20000,
+              assumptions: ['Temporary rehab'],
+              confidence: 0.71,
+            }),
+          },
+        ],
+      },
+      normalizeAiScenarioInterpretation,
+      'individual',
+      'I need PT twice a week for 6 weeks after surgery.',
+    )
+
+    expect(interpretation).toEqual({
+      scenarioType: 'moderate',
+      estimatedAnnualMedicalSpend: 3000,
+      assumptions: ['Temporary rehab'],
+      confidence: 0.71,
     })
   })
 

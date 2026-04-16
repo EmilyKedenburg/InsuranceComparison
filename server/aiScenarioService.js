@@ -125,6 +125,23 @@ function parseDollarAmount(rawAmount) {
   return Number.isFinite(normalizedAmount) ? normalizedAmount : null
 }
 
+function parseCountToken(rawValue) {
+  const normalizedValue = String(rawValue).trim().toLowerCase()
+  const numberWordMap = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+  }
+
+  if (normalizedValue in numberWordMap) {
+    return numberWordMap[normalizedValue]
+  }
+
+  const parsedNumber = Number(normalizedValue)
+  return Number.isFinite(parsedNumber) ? parsedNumber : null
+}
+
 function formatWholeDollarAmount(amount) {
   return `$${Math.round(amount).toLocaleString()}`
 }
@@ -231,6 +248,34 @@ function getRecurringCostPerVisit(text) {
   return null
 }
 
+function getExplicitVisitCount(text) {
+  const visitCountPatterns = [
+    /\b(one|two|three|four|\d+)\s*(?:-|–|to)\s*(one|two|three|four|\d+)\s+(?:specialist\s+|follow[- ]?up\s+|doctor\s+|therapy\s+|pt\s+|physical therapy\s+)?(?:visits?|appointments?|sessions?)\b/i,
+    /\b(one|two|three|four|\d+)\s+(?:specialist\s+|follow[- ]?up\s+|doctor\s+|therapy\s+|pt\s+|physical therapy\s+)?(?:visits?|appointments?|sessions?)\b/i,
+  ]
+
+  for (const pattern of visitCountPatterns) {
+    const match = text.match(pattern)
+    if (!match) {
+      continue
+    }
+
+    if (match[2]) {
+      const minCount = parseCountToken(match[1])
+      const maxCount = parseCountToken(match[2])
+      if (!Number.isFinite(minCount) || !Number.isFinite(maxCount)) {
+        return null
+      }
+
+      return Math.round((minCount + maxCount) / 2)
+    }
+
+    return parseCountToken(match[1])
+  }
+
+  return null
+}
+
 function getOneTimeCost(text) {
   for (const pattern of oneTimeCostPatterns) {
     const match = text.match(pattern)
@@ -316,11 +361,15 @@ export function analyzeScenarioCostEstimate(userInput = '') {
   const extractedLineItems = clauses.reduce((items, clause) => {
     const frequencyMatch = getRecurringAnnualOccurrences(clause)
     const costPerVisit = getRecurringCostPerVisit(clause)
+    const explicitVisitCount = getExplicitVisitCount(clause)
     const oneTimeCost = getOneTimeCost(clause)
 
     if (frequencyMatch !== null) {
       detectedCadence.push(frequencyMatch.assumptionLabel)
       detectedVisitCounts.push(frequencyMatch.annualOccurrences)
+    }
+    if (explicitVisitCount !== null && frequencyMatch === null) {
+      detectedVisitCounts.push(explicitVisitCount)
     }
 
     const durationMatch = clause.match(/\bfor\s+(\d+)\s+(weeks?|months?)\b/i)
@@ -335,6 +384,16 @@ export function analyzeScenarioCostEstimate(userInput = '') {
         `Recurring care: ${frequencyMatch.assumptionLabel} x ${formatWholeDollarAmount(costPerVisit)} = ${formatWholeDollarAmount(annualizedCost)}.`,
       )
       items.push(annualizedCost)
+      return items
+    }
+
+    if (explicitVisitCount !== null && costPerVisit !== null) {
+      const countedCost = explicitVisitCount * costPerVisit
+      detectedExplicitCosts.push(costPerVisit)
+      extractedAssumptions.push(
+        `Recurring care: ${explicitVisitCount} visits x ${formatWholeDollarAmount(costPerVisit)} = ${formatWholeDollarAmount(countedCost)}.`,
+      )
+      items.push(countedCost)
       return items
     }
 
@@ -427,6 +486,22 @@ function normalizeConfidence(confidence) {
 function hasExplicitChronicEvidence(userInput) {
   const normalizedInput = typeof userInput === 'string' ? userInput.trim() : ''
   return explicitChronicEvidencePatterns.some((pattern) => pattern.test(normalizedInput))
+}
+
+function hasTemporaryRehabEvidence(userInput) {
+  const normalizedInput = typeof userInput === 'string' ? userInput.trim() : ''
+
+  if (!normalizedInput) {
+    return false
+  }
+
+  return (
+    /\b(?:recovering from surgery|after surgery|post[- ]surgery|post[- ]op|postoperative|rehab)\b/i.test(
+      normalizedInput,
+    ) &&
+    /\b(?:pt|physical therapy)\b/i.test(normalizedInput) &&
+    /\bfor\s+\d+\s+weeks?\b/i.test(normalizedInput)
+  )
 }
 
 export function logAiScenarioEvent(level, event, details = {}) {
@@ -622,6 +697,8 @@ export function normalizeAiScenarioInterpretation(
   let scenarioType = interpretation.scenarioType
   if (costEstimate.estimationMode === 'extracted') {
     scenarioType = 'custom'
+  } else if (hasTemporaryRehabEvidence(userInput) && scenarioType === 'major_event') {
+    scenarioType = 'moderate'
   } else if (
     scenarioType === 'chronic_condition' &&
     !hasExplicitChronicEvidence(userInput)
