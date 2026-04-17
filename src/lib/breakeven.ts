@@ -29,6 +29,18 @@ export interface BreakEvenSummary {
   message: string
 }
 
+export interface WinningRegion {
+  planId: string
+  planName: string
+  startSpend: number
+  endSpend: number | null
+}
+
+export interface WinningRegionSummary {
+  regions: WinningRegion[]
+  summaryLines: string[]
+}
+
 export interface BreakEvenAnalysisResult {
   points: BreakEvenAnalysisPoint[]
   breakEvenPoints: BreakEvenPoint[]
@@ -44,6 +56,35 @@ export interface AnalyzeBreakEvenOptions {
   maxSpend?: number
   step?: number
   activeSpend?: number
+}
+
+export interface SummarizeWinningRegionsOptions {
+  minRegionWidth?: number
+  roundingIncrement?: number | null
+  maxSummaryRange?: number | null
+}
+
+export const defaultWinningRegionSummaryOptions = {
+  minRegionWidth: 500,
+  roundingIncrement: 100,
+} as const
+
+export function roundUpToNiceAxisValue(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0
+  }
+
+  const increment = value <= 10000 ? 500 : 1000
+  return Math.ceil(value / increment) * increment
+}
+
+export function getMeaningfulMaxSpend(plans: InsurancePlan[]) {
+  const highestIndividualOopMax = plans.reduce(
+    (highest, plan) => Math.max(highest, Math.max(0, plan.individualOutOfPocketMax)),
+    0,
+  )
+
+  return roundUpToNiceAxisValue(highestIndividualOopMax * 1.25)
 }
 
 interface NormalizedPlan {
@@ -62,6 +103,18 @@ function roundToCents(value: number) {
 
 function roundToWholeDollars(value: number) {
   return Math.round(value)
+}
+
+function roundSpendForSummary(value: number, roundingIncrement: number | null | undefined) {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+
+  if (!roundingIncrement || roundingIncrement <= 0) {
+    return roundToWholeDollars(value)
+  }
+
+  return Math.round(value / roundingIncrement) * roundingIncrement
 }
 
 function sanitizeStep(step: number | undefined) {
@@ -320,4 +373,171 @@ export function summarizeBreakEven(
       message: `${cheaperPlanNameBeforeBreakEven} is cheaper up to about $${upToSpend.toLocaleString()} in annual medical spend; after that, ${cheaperPlanNameAfterBreakEven} is cheaper.`,
     }
   })
+}
+
+function getRegionWidth(region: { startSpend: number; endSpend: number | null }, fallbackMax: number) {
+  const regionEnd = region.endSpend ?? fallbackMax
+  return Math.max(0, regionEnd - region.startSpend)
+}
+
+function findTransitionSpend(
+  leftPlanId: string,
+  rightPlanId: string,
+  leftSpend: number,
+  rightSpend: number,
+  breakEvenPoints: BreakEvenPoint[],
+) {
+  const matchingBreakEven = breakEvenPoints.find(
+    (point) =>
+      point.spend >= leftSpend - epsilon &&
+      point.spend <= rightSpend + epsilon &&
+      ((point.planAId === leftPlanId && point.planBId === rightPlanId) ||
+        (point.planAId === rightPlanId && point.planBId === leftPlanId)),
+  )
+
+  return matchingBreakEven?.spend ?? rightSpend
+}
+
+function mergeSmallRegions(
+  regions: WinningRegion[],
+  minRegionWidth: number,
+  maxSummaryRange: number,
+) {
+  if (regions.length <= 1) {
+    return regions
+  }
+
+  const mergedRegions = [...regions]
+  let didMerge = true
+
+  while (didMerge) {
+    didMerge = false
+
+    for (let index = 0; index < mergedRegions.length; index += 1) {
+      const region = mergedRegions[index]
+      const width = getRegionWidth(region, maxSummaryRange)
+
+      if (width >= minRegionWidth || mergedRegions.length === 1) {
+        continue
+      }
+
+      const previousRegion = mergedRegions[index - 1]
+      const nextRegion = mergedRegions[index + 1]
+
+      if (previousRegion && nextRegion && previousRegion.planId === nextRegion.planId) {
+        previousRegion.endSpend = nextRegion.endSpend
+        mergedRegions.splice(index, 2)
+        didMerge = true
+        break
+      }
+
+      if (!previousRegion && nextRegion) {
+        nextRegion.startSpend = region.startSpend
+        mergedRegions.splice(index, 1)
+        didMerge = true
+        break
+      }
+
+      if (previousRegion && !nextRegion) {
+        previousRegion.endSpend = region.endSpend
+        mergedRegions.splice(index, 1)
+        didMerge = true
+        break
+      }
+
+      if (previousRegion && nextRegion) {
+        const previousWidth = getRegionWidth(previousRegion, maxSummaryRange)
+        const nextWidth = getRegionWidth(nextRegion, maxSummaryRange)
+
+        if (previousWidth >= nextWidth) {
+          previousRegion.endSpend = region.endSpend
+        } else {
+          nextRegion.startSpend = region.startSpend
+        }
+
+        mergedRegions.splice(index, 1)
+        didMerge = true
+        break
+      }
+    }
+  }
+
+  return mergedRegions
+}
+
+export function summarizeWinningRegions(
+  points: BreakEvenAnalysisPoint[],
+  breakEvenPoints: BreakEvenPoint[],
+  planNamesById: Record<string, string>,
+  options: SummarizeWinningRegionsOptions = {},
+): WinningRegionSummary {
+  if (points.length === 0) {
+    return { regions: [], summaryLines: [] }
+  }
+
+  const maxSummaryRange =
+    options.maxSummaryRange ?? points[points.length - 1]?.spend ?? defaultMaxSpend
+  const minRegionWidth =
+    options.minRegionWidth ?? defaultWinningRegionSummaryOptions.minRegionWidth
+  const roundingIncrement =
+    options.roundingIncrement ?? defaultWinningRegionSummaryOptions.roundingIncrement
+  const rawRegions: WinningRegion[] = []
+  let currentRegion: WinningRegion = {
+    planId: points[0].cheapestPlanId,
+    planName: planNamesById[points[0].cheapestPlanId] ?? points[0].cheapestPlanId,
+    startSpend: points[0].spend,
+    endSpend: null,
+  }
+
+  for (let index = 1; index < points.length; index += 1) {
+    const previousPoint = points[index - 1]
+    const currentPoint = points[index]
+
+    if (currentPoint.cheapestPlanId === currentRegion.planId) {
+      continue
+    }
+
+    const transitionSpend = findTransitionSpend(
+      previousPoint.cheapestPlanId,
+      currentPoint.cheapestPlanId,
+      previousPoint.spend,
+      currentPoint.spend,
+      breakEvenPoints,
+    )
+
+    currentRegion.endSpend = transitionSpend
+    rawRegions.push(currentRegion)
+    currentRegion = {
+      planId: currentPoint.cheapestPlanId,
+      planName: planNamesById[currentPoint.cheapestPlanId] ?? currentPoint.cheapestPlanId,
+      startSpend: transitionSpend,
+      endSpend: null,
+    }
+  }
+
+  rawRegions.push(currentRegion)
+
+  const regions = mergeSmallRegions(rawRegions, minRegionWidth, maxSummaryRange)
+  const summaryLines =
+    regions.length === 1
+      ? [`${regions[0].planName} is cheapest across the full displayed range.`]
+      : regions.map((region, index) => {
+          const roundedStart = roundSpendForSummary(region.startSpend, roundingIncrement)
+          const roundedEnd = roundSpendForSummary(region.endSpend ?? maxSummaryRange, roundingIncrement)
+
+          if (index === 0) {
+            return `${region.planName} is cheapest up to about $${roundedEnd.toLocaleString()} in annual medical spend.`
+          }
+
+          if (index === regions.length - 1) {
+            return `${region.planName} is cheapest above about $${roundedStart.toLocaleString()}.`
+          }
+
+          return `${region.planName} is cheapest from about $${roundedStart.toLocaleString()} to about $${roundedEnd.toLocaleString()}.`
+        })
+
+  return {
+    regions,
+    summaryLines,
+  }
 }

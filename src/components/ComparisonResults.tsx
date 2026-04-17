@@ -1,10 +1,17 @@
+import { useEffect, useMemo, useState } from 'react'
 import type {
   AnnualCostBreakdown,
   CoverageType,
   InsurancePlan,
 } from '../types/insurance'
 import { getCheapestPlanIndex } from '../lib/insurance'
-import { analyzeBreakEven, summarizeBreakEven } from '../lib/breakeven'
+import {
+  analyzeBreakEven,
+  defaultWinningRegionSummaryOptions,
+  getMeaningfulMaxSpend,
+  summarizeWinningRegions,
+} from '../lib/breakeven'
+import type { BreakEvenPoint } from '../lib/breakeven'
 
 interface ComparisonResultsProps {
   plans: InsurancePlan[]
@@ -14,6 +21,23 @@ interface ComparisonResultsProps {
   activeSpend: number
   chartMaxSpend?: number
 }
+
+type ChartRangeMode = 'typical' | 'extended'
+type HoverTooltipState =
+  | {
+      type: 'breakEven'
+      breakEvenPoint: BreakEvenPoint
+      x: number
+      y: number
+      afterPlanId: string
+    }
+  | {
+      type: 'activeSpend'
+      x: number
+      y: number
+      planId: string
+    }
+  | null
 
 const wholeDollarFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -48,6 +72,32 @@ function formatCompactCurrency(value: number) {
 function getChartColor(index: number) {
   const palette = ['#0284c7', '#0f766e', '#ea580c', '#7c3aed']
   return palette[index % palette.length]
+}
+
+function getChartRegionOpacity() {
+  return 0.08
+}
+
+function getTooltipWidthFromContent(
+  lines: string[],
+  minWidth: number,
+  maxWidth: number,
+  characterWidth = 5.6,
+  horizontalPadding = 12,
+) {
+  const contentWidth =
+    Math.max(...lines.map((line) => line.length), 0) * characterWidth +
+    horizontalPadding * 2
+
+  return Math.max(minWidth, Math.min(maxWidth, contentWidth))
+}
+
+function getScaledRatio(value: number, maxValue: number) {
+  if (maxValue <= 0) {
+    return 0
+  }
+
+  return Math.sqrt(Math.max(0, Math.min(1, value / maxValue)))
 }
 
 function getCurrentDeductible(plan: InsurancePlan, coverageType: CoverageType) {
@@ -138,12 +188,12 @@ function SummaryCard({
         {formatCurrency(result.totalAnnualCost)}
       </p>
       <div className="mt-5 space-y-2 text-sm text-slate-600">
-        <p>Annual premium: {formatCurrency(result.premiumCost)}</p>
-        <p>Medical cost paid: {formatCurrency(result.medicalCostPaid)}</p>
-        <p>HSA contribution: -{formatCurrency(result.hsaContribution)}</p>
-        <p>HRA contribution: -{formatCurrency(result.hraContribution)}</p>
-        <p>Adjusted medical cost: {formatCurrency(result.adjustedMedicalCost)}</p>
-        <p>Employer contribution: -{formatCurrency(result.employerContribution)}</p>
+        <p>Annual Premium: {formatCurrency(result.premiumCost)}</p>
+        <p>Medical Cost Paid: {formatCurrency(result.medicalCostPaid)}</p>
+        <p>HSA Contribution: -{formatCurrency(result.hsaContribution)}</p>
+        <p>HRA Contribution: -{formatCurrency(result.hraContribution)}</p>
+        <p>Adjusted Medical Cost: {formatCurrency(result.adjustedMedicalCost)}</p>
+        <p>Employer Contribution: -{formatCurrency(result.employerContribution)}</p>
       </div>
     </article>
   )
@@ -157,6 +207,9 @@ export function ComparisonResults({
   activeSpend,
   chartMaxSpend = 20000,
 }: ComparisonResultsProps) {
+  const [chartRangeMode, setChartRangeMode] = useState<ChartRangeMode>('typical')
+  const [hasManualTypicalOverride, setHasManualTypicalOverride] = useState(false)
+  const [hoverTooltip, setHoverTooltip] = useState<HoverTooltipState>(null)
   const cheapestPlanIndex = getCheapestPlanIndex(results)
   const winningPlan = plans[cheapestPlanIndex]
   const winningResult = results[cheapestPlanIndex]
@@ -175,38 +228,128 @@ export function ComparisonResults({
     sortedTotals.length > 1
       ? sortedTotals[1].result.totalAnnualCost - sortedTotals[0].result.totalAnnualCost
       : 0
+  const meaningfulMaxSpend = getMeaningfulMaxSpend(plans)
+  const activeSpendExceedsTypicalRange = activeSpend > meaningfulMaxSpend
+  const displayMaxSpend = chartRangeMode === 'extended' ? 50000 : meaningfulMaxSpend
   const breakEvenAnalysis = analyzeBreakEven({
     plans,
     coverageType,
-    maxSpend: Math.max(chartMaxSpend, activeSpend),
+    maxSpend: Math.max(chartMaxSpend, 50000, activeSpend),
     activeSpend,
   })
-  const breakEvenSummaries = summarizeBreakEven(breakEvenAnalysis)
-  const chartPoints = breakEvenAnalysis.points
+  const chartPoints = useMemo(
+    () => breakEvenAnalysis.points.filter((point) => point.spend <= displayMaxSpend),
+    [breakEvenAnalysis.points, displayMaxSpend],
+  )
   const chartHeight = 280
   const chartWidth = 760
   const chartPadding = { top: 20, right: 24, bottom: 40, left: 56 }
   const plotWidth = chartWidth - chartPadding.left - chartPadding.right
   const plotHeight = chartHeight - chartPadding.top - chartPadding.bottom
-  const maxSpend = chartPoints[chartPoints.length - 1]?.spend ?? 0
+  const maxTooltipWidth = chartWidth - chartPadding.left - chartPadding.right - 16
+  const maxSpend = displayMaxSpend
   const allChartCosts = chartPoints.flatMap((point) => Object.values(point.costs))
-  const maxCost = Math.max(...allChartCosts, ...Object.values(breakEvenAnalysis.activeSpendResult?.costs ?? {}), 0)
+  const visibleBreakEvenPoints = useMemo(
+    () => breakEvenAnalysis.breakEvenPoints.filter((point) => point.spend <= displayMaxSpend),
+    [breakEvenAnalysis.breakEvenPoints, displayMaxSpend],
+  )
+  const winningRegionSummary = useMemo(
+    () =>
+      summarizeWinningRegions(chartPoints, visibleBreakEvenPoints, breakEvenAnalysis.planNamesById, {
+        minRegionWidth: defaultWinningRegionSummaryOptions.minRegionWidth,
+        roundingIncrement: defaultWinningRegionSummaryOptions.roundingIncrement,
+        maxSummaryRange: displayMaxSpend,
+      }),
+    [chartPoints, visibleBreakEvenPoints, breakEvenAnalysis.planNamesById, displayMaxSpend],
+  )
+  const activeSpendClamped = chartRangeMode === 'typical' && activeSpendExceedsTypicalRange
   const activeSpendResult = breakEvenAnalysis.activeSpendResult
+  const clampedActiveSpend = activeSpendClamped ? meaningfulMaxSpend : activeSpend
+  const activeCheapestPlanIndex =
+    activeSpendResult === null
+      ? -1
+      : breakEvenAnalysis.planIds.indexOf(activeSpendResult.cheapestPlanId)
+  const maxCost = Math.max(
+    ...allChartCosts,
+    ...Object.values(breakEvenAnalysis.activeSpendResult?.costs ?? {}),
+    0,
+  )
+  const xAxisTickRatios = [0, 0.05, 0.15, 0.35, 0.6, 1]
+  const xAxisTicks = xAxisTickRatios.map((ratio) => ({
+    spend: Math.round(maxSpend * ratio),
+    x: chartPadding.left + getScaledRatio(maxSpend * ratio, maxSpend) * plotWidth,
+  }))
+
+  useEffect(() => {
+    if (activeSpendExceedsTypicalRange) {
+      if (!hasManualTypicalOverride) {
+        setChartRangeMode('extended')
+      }
+
+      return
+    }
+
+    setChartRangeMode('typical')
+    setHasManualTypicalOverride(false)
+  }, [activeSpendExceedsTypicalRange, hasManualTypicalOverride])
 
   const getX = (spend: number) =>
-    chartPadding.left + (maxSpend === 0 ? 0 : (spend / maxSpend) * plotWidth)
+    chartPadding.left + getScaledRatio(spend, maxSpend) * plotWidth
   const getY = (cost: number) =>
     chartPadding.top + plotHeight - (maxCost === 0 ? 0 : (cost / maxCost) * plotHeight)
+  const getPlanName = (planId: string) =>
+    breakEvenAnalysis.planNamesById[planId] ?? planId
+  const getPlanIndex = (planId: string) => breakEvenAnalysis.planIds.indexOf(planId)
+  const getBreakEvenAfterPlanId = (breakEvenPoint: BreakEvenPoint) => {
+    const pointIndex = chartPoints.findIndex(
+      (point) => point.spend >= breakEvenPoint.spend - 0.000001,
+    )
+    const nextPoint = chartPoints[Math.min(Math.max(pointIndex, 0), chartPoints.length - 1)]
+    return nextPoint?.cheapestPlanId ?? breakEvenPoint.planBId
+  }
+  const getTooltipX = (anchorX: number, width: number) => {
+    const preferredX = anchorX + 14
+    const maxTooltipX = chartWidth - chartPadding.right - width
 
-  const compact = viewMode === 'condensed'
+    if (preferredX <= maxTooltipX) {
+      return Math.max(chartPadding.left, preferredX)
+    }
+
+    return Math.max(chartPadding.left, anchorX - width - 14)
+  }
+  const getBreakEvenTooltipY = (anchorY: number, height: number) => {
+    const preferredTop = anchorY - height - 12
+
+    if (preferredTop >= chartPadding.top) {
+      return preferredTop
+    }
+
+    return Math.min(chartHeight - chartPadding.bottom - height, anchorY + 12)
+  }
+  const getMarkerTooltipY = (anchorY: number, height: number) => {
+    const preferredTop = anchorY - height - 12
+
+    if (preferredTop >= chartPadding.top) {
+      return preferredTop
+    }
+
+    return Math.min(chartHeight - chartPadding.bottom - height, anchorY + 12)
+  }
+
+  const useFourUpSummaryLayout = viewMode === 'scroll' && plans.length === 4
+  const compact = viewMode === 'condensed' || useFourUpSummaryLayout
   const containerClass =
-    viewMode === 'grid'
+    useFourUpSummaryLayout
+      ? 'grid gap-4 lg:grid-cols-4'
+      : viewMode === 'grid'
       ? 'grid gap-4 md:grid-cols-2'
       : viewMode === 'condensed'
         ? 'grid gap-4'
         : 'grid min-w-max grid-flow-col gap-4'
   const containerStyle =
-    viewMode === 'scroll'
+    useFourUpSummaryLayout
+      ? undefined
+      : viewMode === 'scroll'
       ? { gridAutoColumns: 'minmax(18rem, 1fr)' }
       : viewMode === 'condensed'
         ? { gridTemplateColumns: `repeat(${plans.length}, minmax(0, 1fr))` }
@@ -219,7 +362,7 @@ export function ComparisonResults({
           Annual Cost Comparison
         </p>
         <h2 className="text-2xl font-semibold text-slate-950">
-          Based on your annual medical spend
+          Based on Your Annual Medical Spend
         </h2>
         <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
           {coverageType} coverage selected
@@ -238,7 +381,7 @@ export function ComparisonResults({
         </div>
       </div>
 
-      <div className={`mt-6 ${viewMode === 'scroll' ? 'overflow-x-auto pb-2' : ''}`}>
+      <div className={`mt-6 ${viewMode === 'scroll' && !useFourUpSummaryLayout ? 'overflow-x-auto pb-2' : ''}`}>
         <div className={containerClass} style={containerStyle}>
           {plans.map((plan, index) => (
             <SummaryCard
@@ -260,28 +403,118 @@ export function ComparisonResults({
               Break-Even Analysis
             </p>
             <h3 className="mt-1 text-xl font-semibold text-slate-950">
-              How plan costs change across annual medical spend
+              Compare Plan Costs Across Annual Medical Spend
             </h3>
           </div>
           <p className="text-sm text-slate-600">
-            Active scenario: <span className="font-semibold text-slate-900">{formatCurrency(activeSpend)}</span>
+            Active Scenario: <span className="font-semibold text-slate-900">{formatCurrency(activeSpend)}</span>
             {activeSpendResult ? (
               <>
                 {' '}
-                and <span className="font-semibold text-emerald-700">{plans[breakEvenAnalysis.planIds.indexOf(activeSpendResult.cheapestPlanId)]?.name}</span> is cheapest there.
+                and{' '}
+                <span
+                  className="font-semibold"
+                  style={{
+                    color:
+                      activeCheapestPlanIndex >= 0
+                        ? getChartColor(activeCheapestPlanIndex)
+                        : undefined,
+                  }}
+                >
+                  {plans[activeCheapestPlanIndex]?.name}
+                </span>{' '}
+                is cheapest there.
               </>
             ) : null}
           </p>
         </div>
 
-        <div className="mt-5 overflow-x-auto">
-          <div className="min-w-[44rem]">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div
+            aria-label="Chart range"
+            className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm"
+            role="group"
+          >
+            <button
+              aria-pressed={chartRangeMode === 'typical'}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                chartRangeMode === 'typical'
+                  ? 'bg-sky-600 text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+              tabIndex={-1}
+              type="button"
+              onClick={() => {
+                setChartRangeMode('typical')
+                setHasManualTypicalOverride(activeSpendExceedsTypicalRange)
+              }}
+            >
+              Typical Range
+            </button>
+            <button
+              aria-pressed={chartRangeMode === 'extended'}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                chartRangeMode === 'extended'
+                  ? 'bg-sky-600 text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+              tabIndex={-1}
+              type="button"
+              onClick={() => {
+                setChartRangeMode('extended')
+                setHasManualTypicalOverride(false)
+              }}
+            >
+              Extended to $50K
+            </button>
+          </div>
+          <p className="text-sm text-slate-500">
+            Typical range focuses on spend up to {formatCurrency(meaningfulMaxSpend)}.
+          </p>
+        </div>
+
+        {activeSpendClamped ? (
+          <p className="mt-3 inline-flex rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            Your active scenario is above the typical chart range, so its marker is pinned to the
+            right edge. Switch to Extended to see its full spend position.
+          </p>
+        ) : null}
+
+        <p className="mt-3 inline-flex rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-900 shadow-sm shadow-sky-100/60">
+          Hover over any break-even point or annual spend marker to see its details. Shaded
+          regions show which plan is cheapest across each spend range.
+        </p>
+
+        <div className="mt-5">
+          <div className="w-full">
             <svg
               aria-label="Break-even analysis chart"
               className="h-auto w-full"
               role="img"
               viewBox={`0 0 ${chartWidth} ${chartHeight}`}
             >
+              {winningRegionSummary.regions.map((region) => {
+                const planIndex = getPlanIndex(region.planId)
+                const startSpend = Math.max(0, region.startSpend)
+                const endSpend = Math.min(displayMaxSpend, region.endSpend ?? displayMaxSpend)
+
+                if (planIndex < 0 || endSpend <= startSpend) {
+                  return null
+                }
+
+                return (
+                  <rect
+                    key={`${region.planId}-${region.startSpend}-${region.endSpend ?? 'max'}`}
+                    fill={getChartColor(planIndex)}
+                    fillOpacity={getChartRegionOpacity()}
+                    height={plotHeight}
+                    width={Math.max(0, getX(endSpend) - getX(startSpend))}
+                    x={getX(startSpend)}
+                    y={chartPadding.top}
+                  />
+                )
+              })}
+
               <line
                 stroke="#cbd5e1"
                 strokeWidth="1"
@@ -300,9 +533,7 @@ export function ComparisonResults({
               />
 
               {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-                const spendTick = maxSpend * ratio
                 const y = chartPadding.top + plotHeight - plotHeight * ratio
-                const spendX = getX(spendTick)
                 const costTick = maxCost * ratio
 
                 return (
@@ -325,33 +556,22 @@ export function ComparisonResults({
                     >
                       {formatCompactCurrency(costTick)}
                     </text>
-                    <text
-                      fill="#64748b"
-                      fontSize="11"
-                      textAnchor="middle"
-                      x={spendX}
-                      y={chartHeight - 12}
-                    >
-                      {formatCompactCurrency(spendTick)}
-                    </text>
                   </g>
                 )
               })}
 
-              {chartPoints.map((point) => {
-                const x = getX(point.spend)
-                return (
-                  <line
-                    key={`tick-${point.spend}`}
-                    stroke="#f8fafc"
-                    strokeWidth="1"
-                    x1={x}
-                    x2={x}
-                    y1={chartPadding.top}
-                    y2={chartHeight - chartPadding.bottom}
-                  />
-                )
-              })}
+              {xAxisTicks.map((tick) => (
+                <text
+                  key={`x-axis-${tick.spend}`}
+                  fill="#64748b"
+                  fontSize="11"
+                  textAnchor="middle"
+                  x={tick.x}
+                  y={chartHeight - 12}
+                >
+                  {formatCompactCurrency(tick.spend)}
+                </text>
+              ))}
 
               {plans.map((plan, index) => {
                 const planId = breakEvenAnalysis.planIds[index]
@@ -376,22 +596,54 @@ export function ComparisonResults({
                 )
               })}
 
-              {breakEvenAnalysis.breakEvenPoints.map((breakEvenPoint, index) => {
+              {visibleBreakEvenPoints.map((breakEvenPoint, index) => {
                 const x = getX(breakEvenPoint.spend)
                 const y = getY(breakEvenPoint.costAtBreakEven ?? 0)
+                const isHovered =
+                  hoverTooltip?.type === 'breakEven' &&
+                  hoverTooltip.breakEvenPoint.planAId === breakEvenPoint.planAId &&
+                  hoverTooltip.breakEvenPoint.planBId === breakEvenPoint.planBId &&
+                  hoverTooltip.breakEvenPoint.spend === breakEvenPoint.spend
 
                 return (
-                  <g key={`${breakEvenPoint.planAId}-${breakEvenPoint.planBId}-${index}`}>
-                    <circle cx={x} cy={y} fill="#0f172a" r="4" />
-                    <text
+                  <g
+                    key={`${breakEvenPoint.planAId}-${breakEvenPoint.planBId}-${index}`}
+                    onBlur={() =>
+                      setHoverTooltip((current) =>
+                        current?.type === 'breakEven' ? null : current,
+                      )
+                    }
+                    onFocus={() =>
+                      setHoverTooltip({
+                        type: 'breakEven',
+                        breakEvenPoint,
+                        x,
+                        y,
+                        afterPlanId: getBreakEvenAfterPlanId(breakEvenPoint),
+                      })
+                    }
+                    onMouseEnter={() =>
+                      setHoverTooltip({
+                        type: 'breakEven',
+                        breakEvenPoint,
+                        x,
+                        y,
+                        afterPlanId: getBreakEvenAfterPlanId(breakEvenPoint),
+                      })
+                    }
+                    onMouseLeave={() =>
+                      setHoverTooltip((current) =>
+                        current?.type === 'breakEven' ? null : current,
+                      )
+                    }
+                  >
+                    <circle
+                      cx={x}
+                      cy={y}
                       fill="#0f172a"
-                      fontSize="11"
-                      textAnchor="middle"
-                      x={x}
-                      y={Math.max(14, y - 10)}
-                    >
-                      {formatCurrency(breakEvenPoint.spend)}
-                    </text>
+                      r={isHovered ? 5 : 4}
+                      tabIndex={0}
+                    />
                   </g>
                 )
               })}
@@ -402,27 +654,196 @@ export function ComparisonResults({
                     stroke="#0f172a"
                     strokeDasharray="6 6"
                     strokeWidth="1.5"
-                    x1={getX(activeSpendResult.spend)}
-                    x2={getX(activeSpendResult.spend)}
+                    x1={getX(clampedActiveSpend)}
+                    x2={getX(clampedActiveSpend)}
                     y1={chartPadding.top}
                     y2={chartHeight - chartPadding.bottom}
                   />
-                  {plans.map((plan, index) => {
-                    const planId = breakEvenAnalysis.planIds[index]
-                    const color = getChartColor(index)
-                    return (
-                      <circle
-                        key={`active-${planId}`}
-                        cx={getX(activeSpendResult.spend)}
-                        cy={getY(activeSpendResult.costs[planId])}
-                        fill={color}
-                        r={activeSpendResult.cheapestPlanId === planId ? 6 : 4}
-                        stroke="#ffffff"
-                        strokeWidth="2"
-                      />
-                    )
+                  {plans
+                    .map((plan, index) => ({
+                      index,
+                      planId: breakEvenAnalysis.planIds[index],
+                    }))
+                    .sort((left, right) => {
+                      const leftIsCheapest = activeSpendResult.cheapestPlanId === left.planId
+                      const rightIsCheapest = activeSpendResult.cheapestPlanId === right.planId
+
+                      if (leftIsCheapest === rightIsCheapest) {
+                        return left.index - right.index
+                      }
+
+                      return leftIsCheapest ? 1 : -1
+                    })
+                    .map(({ index, planId }) => {
+                      const color = getChartColor(index)
+                      return (
+                        <circle
+                          key={`active-${planId}`}
+                          cx={getX(clampedActiveSpend)}
+                          cy={getY(activeSpendResult.costs[planId])}
+                          fill={color}
+                          onBlur={() =>
+                            setHoverTooltip((current) =>
+                              current?.type === 'activeSpend' ? null : current,
+                            )
+                          }
+                          onFocus={() =>
+                            setHoverTooltip({
+                              type: 'activeSpend',
+                              x: getX(clampedActiveSpend),
+                              y: getY(activeSpendResult.costs[planId]),
+                              planId,
+                            })
+                          }
+                          onMouseEnter={() =>
+                            setHoverTooltip({
+                              type: 'activeSpend',
+                              x: getX(clampedActiveSpend),
+                              y: getY(activeSpendResult.costs[planId]),
+                              planId,
+                            })
+                          }
+                          onMouseLeave={() =>
+                            setHoverTooltip((current) =>
+                              current?.type === 'activeSpend' ? null : current,
+                            )
+                          }
+                          r={activeSpendResult.cheapestPlanId === planId ? 6 : 4}
+                          stroke="#ffffff"
+                          strokeWidth="2"
+                          tabIndex={0}
+                        />
+                      )
                   })}
                 </>
+              ) : null}
+
+              {hoverTooltip?.type === 'breakEven' ? (
+                (() => {
+                  const tooltipPaddingX = 12
+                  const afterPlanName = getPlanName(hoverTooltip.afterPlanId)
+                  const beforePlanId =
+                    hoverTooltip.afterPlanId === hoverTooltip.breakEvenPoint.planAId
+                      ? hoverTooltip.breakEvenPoint.planBId
+                      : hoverTooltip.breakEvenPoint.planAId
+                  const beforePlanName = getPlanName(beforePlanId)
+                  const tooltipLines = [
+                    `Break-Even Near ${formatCurrency(hoverTooltip.breakEvenPoint.spend)}`,
+                    `${beforePlanName} and ${afterPlanName}`,
+                    `${afterPlanName} becomes cheaper after this point.`,
+                  ]
+                  const tooltipWidth = getTooltipWidthFromContent(
+                    tooltipLines,
+                    0,
+                    maxTooltipWidth,
+                    5.9,
+                    tooltipPaddingX,
+                  )
+                  const tooltipHeight = 72
+                  const tooltipX = getTooltipX(hoverTooltip.x, tooltipWidth)
+                  const tooltipY = getBreakEvenTooltipY(hoverTooltip.y, tooltipHeight)
+
+                  return (
+                    <g pointerEvents="none">
+                      <rect
+                        fill="rgba(15, 23, 42, 0.96)"
+                        height={tooltipHeight}
+                        rx="16"
+                        width={tooltipWidth}
+                        x={tooltipX}
+                        y={tooltipY}
+                      />
+                      <text
+                        fill="#ffffff"
+                        fontSize="12"
+                        fontWeight="600"
+                        x={tooltipX + tooltipPaddingX}
+                        y={tooltipY + 22}
+                      >
+                        Break-Even Near {formatCurrency(hoverTooltip.breakEvenPoint.spend)}
+                      </text>
+                      <text
+                        fill="#cbd5e1"
+                        fontSize="11"
+                        x={tooltipX + tooltipPaddingX}
+                        y={tooltipY + 40}
+                      >
+                        {beforePlanName} and {afterPlanName}
+                      </text>
+                      <text
+                        fill="#ffffff"
+                        fontSize="11"
+                        x={tooltipX + tooltipPaddingX}
+                        y={tooltipY + 58}
+                      >
+                        {afterPlanName} becomes cheaper after this point.
+                      </text>
+                    </g>
+                  )
+                })()
+              ) : null}
+
+              {hoverTooltip?.type === 'activeSpend' && activeSpendResult ? (
+                (() => {
+                  const tooltipPaddingX = 12
+                  const planName = getPlanName(hoverTooltip.planId)
+                  const isCheapest = activeSpendResult.cheapestPlanId === hoverTooltip.planId
+                  const tooltipLines = [
+                    `Annual Spend: ${formatCurrency(activeSpend)}`,
+                    `${planName}: ${formatCurrency(activeSpendResult.costs[hoverTooltip.planId])}`,
+                    isCheapest
+                      ? `${planName} is cheapest at this spend.`
+                      : `${planName} is not the cheapest here.`,
+                  ]
+                  const tooltipWidth = getTooltipWidthFromContent(
+                    tooltipLines,
+                    0,
+                    maxTooltipWidth,
+                    5.5,
+                    tooltipPaddingX,
+                  )
+                  const tooltipHeight = 66
+                  const tooltipX = getTooltipX(hoverTooltip.x, tooltipWidth)
+                  const tooltipY = getMarkerTooltipY(hoverTooltip.y, tooltipHeight)
+
+                  return (
+                    <g pointerEvents="none">
+                      <rect
+                        fill="rgba(15, 23, 42, 0.96)"
+                        height={tooltipHeight}
+                        rx="16"
+                        width={tooltipWidth}
+                        x={tooltipX}
+                        y={tooltipY}
+                      />
+                      <text
+                        fill="#ffffff"
+                        fontSize="11"
+                        fontWeight="600"
+                        x={tooltipX + tooltipPaddingX}
+                        y={tooltipY + 20}
+                      >
+                        Annual Spend: {formatCurrency(activeSpend)}
+                      </text>
+                      <text
+                        fill="#cbd5e1"
+                        fontSize="10"
+                        x={tooltipX + tooltipPaddingX}
+                        y={tooltipY + 36}
+                      >
+                        {planName}: {formatCurrency(activeSpendResult.costs[hoverTooltip.planId])}
+                      </text>
+                      <text
+                        fill="#ffffff"
+                        fontSize="10"
+                        x={tooltipX + tooltipPaddingX}
+                        y={tooltipY + 52}
+                      >
+                        {isCheapest ? `${planName} is cheapest at this spend.` : `${planName} is not the cheapest here.`}
+                      </text>
+                    </g>
+                  )
+                })()
               ) : null}
             </svg>
           </div>
@@ -444,17 +865,14 @@ export function ComparisonResults({
           ))}
         </div>
 
-        {breakEvenSummaries.length > 0 ? (
-          <div className="mt-4 space-y-2">
-            {breakEvenSummaries.map((summary) => (
-              <p
-                key={`${summary.cheaperPlanId}-${summary.moreExpensivePlanId}-${summary.upToSpend}`}
-                className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
-              >
-                {summary.message}
-              </p>
+        {winningRegionSummary.summaryLines.length > 0 ? (
+          <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-slate-950 marker:text-slate-950">
+            {winningRegionSummary.summaryLines.map((summaryLine) => (
+              <li key={summaryLine}>
+                {summaryLine}
+              </li>
             ))}
-          </div>
+          </ul>
         ) : (
           <p className="mt-4 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
             No break-even crossover was detected in the displayed spend range.

@@ -45,15 +45,15 @@ describe('App integration', () => {
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     const hdhpSummaryCard = getSummaryCard('HDHP Plan')
 
-    expect(within(ppoSummaryCard).getByText('$2,840')).toBeInTheDocument()
-    expect(within(hdhpSummaryCard).getByText('$420')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$2,820')).toBeInTheDocument()
+    expect(within(hdhpSummaryCard).getByText('$1,780')).toBeInTheDocument()
     expect(
-      screen.getByText(/HDHP Plan is currently the cheapest plan by \$2,420\./)
+      screen.getByText(/HDHP Plan is currently the cheapest plan by \$1,040\./)
     ).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Break-even analysis chart' })).toBeInTheDocument()
     expect(
       screen.getByText((_, element) =>
-        element?.textContent === 'Active scenario: $0 and HDHP Plan is cheapest there.',
+        element?.textContent === 'Active Scenario: $0 and HDHP Plan is cheapest there.',
       ),
     ).toBeInTheDocument()
   })
@@ -63,9 +63,26 @@ describe('App integration', () => {
 
     expect(screen.getByText('Break-Even Analysis')).toBeInTheDocument()
     expect(
-      screen.getByText('How plan costs change across annual medical spend'),
+      screen.getByText('Compare plan costs across annual medical spend'),
     ).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Break-even analysis chart' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Typical Range' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Extended to $50K' })).toBeInTheDocument()
+    expect(screen.getByText(/Typical range focuses on spend up to/)).toBeInTheDocument()
+  })
+
+  it('shows a note when the active scenario exceeds the typical chart range', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /Worst Case:/ }))
+    await user.click(screen.getByRole('button', { name: 'Typical Range' }))
+
+    expect(
+      screen.getByText(
+        /Your active scenario is above the typical chart range, so its marker is pinned to the right edge\./,
+      ),
+    ).toBeInTheDocument()
   })
 
   it('keeps the estimated annual medical spend input synced with the slider', () => {
@@ -79,7 +96,7 @@ describe('App integration', () => {
     expect(spendInput).toHaveValue(0)
 
     const ppoSummaryCard = getSummaryCard('PPO Plan')
-    expect(within(ppoSummaryCard).getByText('$2,840')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$2,820')).toBeInTheDocument()
   })
 
   it('clicking Healthy sets annual medical spend to 500', async () => {
@@ -143,7 +160,7 @@ describe('App integration', () => {
       screen.getByLabelText('Scenario Description'),
       'We are planning for pregnancy care, delivery, and regular follow-up visits.',
     )
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/ai-scenario',
@@ -169,7 +186,7 @@ describe('App integration', () => {
     ).toBeInTheDocument()
 
     const ppoSummaryCard = getSummaryCard('PPO Plan')
-    expect(within(ppoSummaryCard).getByText('$6,840')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$6,620')).toBeInTheDocument()
   })
 
   it('does not call the consultant when the scenario description is blank', async () => {
@@ -179,7 +196,7 @@ describe('App integration', () => {
 
     render(<App />)
 
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     expect(fetchMock).not.toHaveBeenCalled()
     expect(
@@ -203,7 +220,7 @@ describe('App integration', () => {
       screen.getByLabelText('Scenario Description'),
       'I have a chronic condition with regular medication and specialist visits.',
     )
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     expect(
       screen.getByText('The AI response did not include the required scenario tool call.'),
@@ -232,7 +249,7 @@ describe('App integration', () => {
       screen.getByLabelText('Scenario Description'),
       'I expect regular specialist visits and medication refills all year.',
     )
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     expect(moderatePreset).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByLabelText('Estimated Annual Medical Spend')).toHaveValue(9600)
@@ -254,7 +271,7 @@ describe('App integration', () => {
       screen.getByLabelText('Scenario Description'),
       'Please estimate a year with recurring appointments and a possible hospital stay.',
     )
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     expect(
       screen.getByText('The AI consultant took too long to respond. Please try again in a moment.'),
@@ -277,14 +294,14 @@ describe('App integration', () => {
     render(<App />)
 
     await user.type(screen.getByLabelText('Scenario Description'), 'Moderate year')
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     const monthlyPremiumInput = screen.getAllByLabelText('Monthly Premium')[0]
     await user.click(monthlyPremiumInput)
     await user.type(monthlyPremiumInput, '100')
 
     const ppoSummaryCard = getSummaryCard('PPO Plan')
-    expect(within(ppoSummaryCard).getByText('$4,200')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$3,800')).toBeInTheDocument()
     expect(screen.getByText('moderate')).toBeInTheDocument()
   })
 
@@ -304,11 +321,11 @@ describe('App integration', () => {
     render(<App />)
 
     await user.type(screen.getByLabelText('Scenario Description'), 'Moderate year')
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
     await user.click(screen.getByRole('button', { name: 'family' }))
 
     const ppoSummaryCard = getSummaryCard('PPO Plan')
-    expect(within(ppoSummaryCard).getByText('$8,040')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$7,620')).toBeInTheDocument()
     expect(screen.getByText('moderate')).toBeInTheDocument()
     expect(screen.getByText('AI Estimate')).toBeInTheDocument()
   })
@@ -329,7 +346,7 @@ describe('App integration', () => {
     render(<App />)
 
     await user.type(screen.getByLabelText('Scenario Description'), 'Major event year')
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
     await user.click(spendInput)
@@ -358,7 +375,7 @@ describe('App integration', () => {
     render(<App />)
 
     await user.type(screen.getByLabelText('Scenario Description'), 'Chronic condition year')
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
     await user.clear(spendInput)
@@ -385,7 +402,7 @@ describe('App integration', () => {
     render(<App />)
 
     await user.type(screen.getByLabelText('Scenario Description'), 'Major event year')
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
     await user.clear(spendInput)
@@ -411,7 +428,7 @@ describe('App integration', () => {
     render(<App />)
 
     await user.type(screen.getByLabelText('Scenario Description'), 'Major event year')
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
     await user.clear(spendInput)
@@ -440,7 +457,7 @@ describe('App integration', () => {
     render(<App />)
 
     await user.type(screen.getByLabelText('Scenario Description'), 'Moderate year')
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     const spendInput = screen.getByLabelText('Estimated Annual Medical Spend')
     await user.clear(spendInput)
@@ -460,7 +477,7 @@ describe('App integration', () => {
 
     expect(screen.getByText('Why this plan is cheaper')).toBeInTheDocument()
     expect(
-      screen.getByText(/HDHP Plan has a lower annual premium by \$1,620\./),
+      screen.getByText(/PPO Plan gets \$400 more employer contribution\./),
     ).toBeInTheDocument()
 
     const monthlyPremiumInputs = screen.getAllByLabelText('Monthly Premium')
@@ -468,7 +485,7 @@ describe('App integration', () => {
     await user.type(monthlyPremiumInputs[0], '100')
 
     expect(
-      screen.getByText(/PPO Plan has a lower annual premium by \$1,020\./),
+      screen.getByText(/PPO Plan has a lower annual premium by \$1,380\./),
     ).toBeInTheDocument()
   })
 
@@ -488,7 +505,7 @@ describe('App integration', () => {
     render(<App />)
 
     await user.type(screen.getByLabelText('Scenario Description'), 'Moderate year')
-    await user.click(screen.getByRole('button', { name: 'Interpret Scenario' }))
+    await user.click(screen.getByRole('button', { name: 'Create Estimate' }))
 
     const monthlyPremiumInput = screen.getAllByLabelText('Monthly Premium')[0]
     await user.clear(monthlyPremiumInput)
@@ -496,7 +513,7 @@ describe('App integration', () => {
     await user.click(screen.getByRole('button', { name: 'family' }))
 
     const ppoSummaryCard = getSummaryCard('PPO Plan')
-    expect(within(ppoSummaryCard).getByText('$5,400')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$4,800')).toBeInTheDocument()
     expect(screen.getByText('moderate')).toBeInTheDocument()
     expect(screen.getAllByText('$14,000').length).toBeGreaterThan(0)
   })
@@ -510,8 +527,8 @@ describe('App integration', () => {
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     const hdhpSummaryCard = getSummaryCard('HDHP Plan')
 
-    expect(within(ppoSummaryCard).getByText('$3,340')).toBeInTheDocument()
-    expect(within(hdhpSummaryCard).getByText('$920')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$3,320')).toBeInTheDocument()
+    expect(within(hdhpSummaryCard).getByText('$1,780')).toBeInTheDocument()
   })
 
   it('highlights the selected preset and clears it after manual spend entry', async () => {
@@ -565,8 +582,8 @@ describe('App integration', () => {
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     const hdhpSummaryCard = getSummaryCard('HDHP Plan')
 
-    expect(within(ppoSummaryCard).getByText('$7,640')).toBeInTheDocument()
-    expect(within(hdhpSummaryCard).getByText('$7,380')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$7,220')).toBeInTheDocument()
+    expect(within(hdhpSummaryCard).getByText('$8,960')).toBeInTheDocument()
     expect(screen.getByText('family coverage selected')).toBeInTheDocument()
   })
 
@@ -583,12 +600,12 @@ describe('App integration', () => {
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     const hdhpSummaryCard = getSummaryCard('HDHP Plan')
 
-    expect(within(ppoSummaryCard).getByText('$2,400')).toBeInTheDocument()
-    expect(within(hdhpSummaryCard).getByText('$3,800')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$2,000')).toBeInTheDocument()
+    expect(within(hdhpSummaryCard).getByText('$4,920')).toBeInTheDocument()
     expect(within(ppoFormSection).getByText('Lower Total Cost')).toBeInTheDocument()
     expect(within(hdhpFormSection).queryByText('Lower Total Cost')).not.toBeInTheDocument()
     expect(
-      screen.getByText(/PPO Plan is currently the cheapest plan by \$1,400\./)
+      screen.getByText(/PPO Plan is currently the cheapest plan by \$2,920\./)
     ).toBeInTheDocument()
   })
 
@@ -601,8 +618,8 @@ describe('App integration', () => {
     await user.type(monthlyPremiumInputs[0], '123.45')
 
     const ppoSummaryCard = getSummaryCard('PPO Plan')
-    expect(within(ppoSummaryCard).getByText('$2,681.40')).toBeInTheDocument()
-    expect(within(ppoSummaryCard).getByText('Annual premium: $1,481.40')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$2,281.40')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('Annual Premium: $1,481.40')).toBeInTheDocument()
   })
 
   it('updates totals when hsa contribution changes', async () => {
@@ -614,9 +631,9 @@ describe('App integration', () => {
     await user.type(contributionInputs[0], '500')
 
     const ppoSummaryCard = getSummaryCard('PPO Plan')
-    expect(within(ppoSummaryCard).getByText('$4,540')).toBeInTheDocument()
-    expect(within(ppoSummaryCard).getByText('HSA contribution: -$500')).toBeInTheDocument()
-    expect(within(ppoSummaryCard).getByText('Adjusted medical cost: $1,700')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$4,320')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('HSA Contribution: -$500')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('Adjusted Medical Cost: $1,500')).toBeInTheDocument()
   })
 
   it('updates totals when hra contribution changes', async () => {
@@ -627,8 +644,8 @@ describe('App integration', () => {
     await user.clear(contributionInputs[0])
     await user.type(contributionInputs[0], '400')
     const ppoSummaryCard = getSummaryCard('PPO Plan')
-    expect(within(ppoSummaryCard).getByText('HRA contribution: -$400')).toBeInTheDocument()
-    expect(within(ppoSummaryCard).getByText('Adjusted medical cost: $1,800')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('HRA Contribution: -$400')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('Adjusted Medical Cost: $1,600')).toBeInTheDocument()
   })
 
   it('replaces a prefilled zero when typing into a numeric field', async () => {
@@ -695,10 +712,10 @@ describe('App integration', () => {
     await user.type(hraInputs[0], '300')
 
     const ppoSummaryCard = getSummaryCard('PPO Plan')
-    expect(within(ppoSummaryCard).getByText('HSA contribution: -$500')).toBeInTheDocument()
-    expect(within(ppoSummaryCard).getByText('HRA contribution: -$300')).toBeInTheDocument()
-    expect(within(ppoSummaryCard).getByText('Adjusted medical cost: $1,400')).toBeInTheDocument()
-    expect(within(ppoSummaryCard).getByText('$4,240')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('HSA Contribution: -$500')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('HRA Contribution: -$300')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('Adjusted Medical Cost: $1,200')).toBeInTheDocument()
+    expect(within(ppoSummaryCard).getByText('$4,020')).toBeInTheDocument()
   })
 
   it('shows a styled tooltip with hsa or hra specific help text', async () => {
@@ -809,7 +826,9 @@ describe('App integration', () => {
     await user.click(addPlanButton)
 
     expect(screen.getAllByRole('heading', { name: 'EPO Plan' }).length).toBeGreaterThan(0)
-    expect(screen.getAllByRole('heading', { name: 'Copay Plan' }).length).toBeGreaterThan(0)
+    expect(
+      screen.getAllByRole('heading', { name: 'High Cost Sharing Plan' }).length,
+    ).toBeGreaterThan(0)
     expect(addPlanButton).toBeDisabled()
   })
 

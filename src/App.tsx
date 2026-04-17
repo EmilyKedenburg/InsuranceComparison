@@ -17,6 +17,15 @@ const annualMedicalSpendSliderStep = 100
 const initialPlans = structuredClone(defaultPlans.slice(0, minimumPlanCount))
 type PlanViewMode = 'grid' | 'scroll' | 'condensed'
 type SpendPresetId = 'healthy' | 'moderate' | 'worstCase'
+const scenarioExamples = [
+  'Example: We are planning for a pregnancy, a few specialist visits, and some lab work this year.',
+  'Example: I’ll have a few doctor visits, maybe one specialist, and some lab work this year.',
+  'Example: I go to therapy every other week and see a specialist a few times a year.',
+]
+
+function getNextScenarioExample() {
+  return scenarioExamples[Math.floor(Math.random() * scenarioExamples.length)]
+}
 
 function getSpendPresets(coverageType: CoverageType): Array<{
   id: SpendPresetId
@@ -87,6 +96,7 @@ function formatCurrency(value: number) {
 
 export default function App() {
   const [plans, setPlans] = useState<InsurancePlan[]>(initialPlans)
+  const [scenarioPlaceholder] = useState(() => getNextScenarioExample())
   const [annualMedicalSpend, setAnnualMedicalSpend] = useState(5000)
   const [annualMedicalSpendDraft, setAnnualMedicalSpendDraft] = useState<string | null>(null)
   const [activeSpendPreset, setActiveSpendPreset] = useState<SpendPresetId | null>('moderate')
@@ -206,11 +216,11 @@ export default function App() {
             Insurance Plan Comparison
           </p>
           <h1 className="mt-4 max-w-3xl text-4xl font-bold tracking-tight text-slate-950">
-            Compare two plans by premium, deductible, coinsurance, and total annual
-            cost.
+            Find the Most Cost-Effective Plan for Your Year
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-            Enter plan details and estimate your annual medical spend.
+            Enter your plan details and expected care to estimate your total annual
+            costs.
           </p>
 
           <div className="mt-8 max-w-sm">
@@ -385,12 +395,13 @@ export default function App() {
               AI Consultant
             </p>
             <h2 className="text-2xl font-semibold text-slate-950">
-              Describe your healthcare year in plain English
+              Tell Us About Your Healthcare Needs This Year
             </h2>
             <p className="max-w-3xl text-sm leading-6 text-slate-600">
-              The AI consultant interprets your description into a structured scenario.
-              Your plan totals still come from the app&apos;s existing insurance cost
-              engine, not from the model guessing numbers.
+              Describe your situation in your own words. We&apos;ll turn it into a cost
+              estimate using your plan details.
+              <br />
+              We do not store your medical or plan data in this app or on our server.
             </p>
           </div>
 
@@ -405,7 +416,7 @@ export default function App() {
               <textarea
                 className="min-h-36 w-full rounded-3xl border border-slate-200 bg-white px-4 py-4 text-slate-900 outline-none transition focus:border-sky-500"
                 id="scenario-description"
-                placeholder="Example: We are planning for a pregnancy, a few specialist visits, and some lab work this year."
+                placeholder={scenarioPlaceholder}
                 value={scenarioDescription}
                 onChange={(event) => {
                   setScenarioDescription(event.target.value)
@@ -420,7 +431,7 @@ export default function App() {
                   disabled={isInterpretingScenario}
                   onClick={handleScenarioInterpretation}
                 >
-                  {isInterpretingScenario ? 'Interpreting Scenario...' : 'Interpret Scenario'}
+                  {isInterpretingScenario ? 'Creating Estimate...' : 'Create Estimate'}
                 </button>
                 <p className="text-xs leading-5 text-slate-500">{consultantDisclaimer}</p>
               </div>
@@ -431,7 +442,7 @@ export default function App() {
 
             <div className="rounded-3xl border border-slate-200 bg-slate-50/90 p-5">
               <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
-                Interpreted Scenario
+                Estimated Medical Spend
               </p>
               {scenarioInterpretation ? (
                 <div className="mt-4 space-y-4 text-sm text-slate-700">
@@ -520,8 +531,7 @@ export default function App() {
                 </div>
               ) : (
                 <p className="mt-4 text-sm leading-6 text-slate-600">
-                  Submit a plain-English scenario to generate a structured estimate,
-                  assumptions, and confidence score before comparing plans.
+                  Describe your healthcare needs to see an estimated cost and breakdown.
                 </p>
               )}
             </div>
