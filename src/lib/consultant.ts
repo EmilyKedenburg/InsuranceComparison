@@ -2,7 +2,7 @@ import type { ScenarioInterpretation } from '../types/consultant'
 import type { CoverageType } from '../types/insurance'
 
 export const consultantDisclaimer =
-  'This is a financial simulation, not medical advice. Final costs depend on your insurer, the care you receive, and how claims are processed.'
+  'This simulator provides estimates only, not medical advice. Final premiums, out-of-pocket costs, and claim payments are determined by the insurance carrier based on your policy and actual claims.'
 
 const scenarioSpendFloors: Record<CoverageType, Record<ScenarioInterpretation['scenarioType'], number>> =
   {

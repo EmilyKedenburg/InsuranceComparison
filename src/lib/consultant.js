@@ -1,5 +1,5 @@
 export const interpretScenarioToolName = 'interpret_insurance_scenario';
-export const consultantDisclaimer = 'This is a financial simulation, not medical advice. Final costs depend on your insurer, the care you receive, and how claims are processed.';
+export const consultantDisclaimer = 'This simulator provides estimates only, not medical advice. Final premiums, out-of-pocket costs, and claim payments are determined by the insurance carrier based on your policy and actual claims.';
 const scenarioSpendFloors = {
     individual: {
         custom: 0,

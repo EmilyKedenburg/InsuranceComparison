@@ -524,9 +524,9 @@ export default function App() {
                   </div>
                   <p className="rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-slate-600">
                     Financial simulation only. Not medical advice. Costs below are
-                    computed by the insurance calculator using the current spend value,
-                    and final costs still depend on insurer rules and actual claims
-                    processing.
+                    calculator estimates based on the current spend value. Final
+                    premiums, out-of-pocket costs, and claim payments are determined
+                    by the insurance carrier, not this simulator.
                   </p>
                 </div>
               ) : (
@@ -614,6 +614,7 @@ export default function App() {
           activeSpend={annualMedicalSpend}
           chartMaxSpend={annualMedicalSpendSliderMax}
           coverageType={coverageType}
+          disclaimer={consultantDisclaimer}
           plans={plans}
           results={results}
           viewMode={planViewMode}

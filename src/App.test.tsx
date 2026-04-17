@@ -184,6 +184,9 @@ describe('App integration', () => {
     expect(
       screen.getByText(/Financial simulation only\. Not medical advice\./),
     ).toBeInTheDocument()
+    expect(
+      screen.getByText(/Final premiums, out-of-pocket costs, and claim payments are determined by the insurance carrier, not this simulator\./),
+    ).toBeInTheDocument()
 
     const ppoSummaryCard = getSummaryCard('PPO Plan')
     expect(within(ppoSummaryCard).getByText('$6,620')).toBeInTheDocument()

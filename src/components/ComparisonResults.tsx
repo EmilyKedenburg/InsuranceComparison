@@ -20,6 +20,7 @@ interface ComparisonResultsProps {
   viewMode: 'grid' | 'scroll' | 'condensed'
   activeSpend: number
   chartMaxSpend?: number
+  disclaimer?: string
 }
 
 type ChartRangeMode = 'typical' | 'extended'
@@ -206,6 +207,7 @@ export function ComparisonResults({
   viewMode,
   activeSpend,
   chartMaxSpend = 20000,
+  disclaimer,
 }: ComparisonResultsProps) {
   const [chartRangeMode, setChartRangeMode] = useState<ChartRangeMode>('typical')
   const [hasManualTypicalOverride, setHasManualTypicalOverride] = useState(false)
@@ -357,20 +359,29 @@ export function ComparisonResults({
 
   return (
     <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-slate-200 pb-6">
-        <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
-          Annual Cost Comparison
-        </p>
-        <h2 className="text-2xl font-semibold text-slate-950">
-          Based on Your Annual Medical Spend
-        </h2>
-        <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
-          {coverageType} coverage selected
-        </p>
-        <p className="text-slate-600">
-          {winningPlan.name} is currently the cheapest plan
-          {sortedTotals.length > 1 ? ` by ${formatCurrency(savings)}` : ''}.
-        </p>
+      <div className="border-b border-slate-200 pb-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex-1">
+            <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
+              Annual Cost Comparison
+            </p>
+            <h2 className="mt-3 text-2xl font-semibold text-slate-950">
+              Based on Your Annual Medical Spend
+            </h2>
+            <p className="mt-3 text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
+              {coverageType} coverage selected
+            </p>
+            <p className="mt-3 text-slate-600">
+              {winningPlan.name} is currently the cheapest plan
+              {sortedTotals.length > 1 ? ` by ${formatCurrency(savings)}` : ''}.
+            </p>
+          </div>
+          {disclaimer ? (
+            <p className="max-w-xl rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950 lg:ml-6 lg:flex-1">
+              {disclaimer}
+            </p>
+          ) : null}
+        </div>
         <div className="rounded-3xl border border-sky-100 bg-sky-50/70 p-4">
           <p className="text-sm font-semibold text-slate-900">Why this plan is cheaper</p>
           <ul className="mt-2 list-disc pl-5 text-sm leading-6 text-slate-600">
