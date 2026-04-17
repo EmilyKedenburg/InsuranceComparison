@@ -4,12 +4,15 @@ import type {
   InsurancePlan,
 } from '../types/insurance'
 import { getCheapestPlanIndex } from '../lib/insurance'
+import { analyzeBreakEven, summarizeBreakEven } from '../lib/breakeven'
 
 interface ComparisonResultsProps {
   plans: InsurancePlan[]
   results: AnnualCostBreakdown[]
   coverageType: CoverageType
   viewMode: 'grid' | 'scroll' | 'condensed'
+  activeSpend: number
+  chartMaxSpend?: number
 }
 
 const wholeDollarFormatter = new Intl.NumberFormat('en-US', {
@@ -31,6 +34,20 @@ function formatCurrency(value: number) {
   return Number.isInteger(roundedValue)
     ? wholeDollarFormatter.format(roundedValue)
     : centsFormatter.format(roundedValue)
+}
+
+function formatCompactCurrency(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
+function getChartColor(index: number) {
+  const palette = ['#0284c7', '#0f766e', '#ea580c', '#7c3aed']
+  return palette[index % palette.length]
 }
 
 function getCurrentDeductible(plan: InsurancePlan, coverageType: CoverageType) {
@@ -137,6 +154,8 @@ export function ComparisonResults({
   results,
   coverageType,
   viewMode,
+  activeSpend,
+  chartMaxSpend = 20000,
 }: ComparisonResultsProps) {
   const cheapestPlanIndex = getCheapestPlanIndex(results)
   const winningPlan = plans[cheapestPlanIndex]
@@ -156,6 +175,28 @@ export function ComparisonResults({
     sortedTotals.length > 1
       ? sortedTotals[1].result.totalAnnualCost - sortedTotals[0].result.totalAnnualCost
       : 0
+  const breakEvenAnalysis = analyzeBreakEven({
+    plans,
+    coverageType,
+    maxSpend: Math.max(chartMaxSpend, activeSpend),
+    activeSpend,
+  })
+  const breakEvenSummaries = summarizeBreakEven(breakEvenAnalysis)
+  const chartPoints = breakEvenAnalysis.points
+  const chartHeight = 280
+  const chartWidth = 760
+  const chartPadding = { top: 20, right: 24, bottom: 40, left: 56 }
+  const plotWidth = chartWidth - chartPadding.left - chartPadding.right
+  const plotHeight = chartHeight - chartPadding.top - chartPadding.bottom
+  const maxSpend = chartPoints[chartPoints.length - 1]?.spend ?? 0
+  const allChartCosts = chartPoints.flatMap((point) => Object.values(point.costs))
+  const maxCost = Math.max(...allChartCosts, ...Object.values(breakEvenAnalysis.activeSpendResult?.costs ?? {}), 0)
+  const activeSpendResult = breakEvenAnalysis.activeSpendResult
+
+  const getX = (spend: number) =>
+    chartPadding.left + (maxSpend === 0 ? 0 : (spend / maxSpend) * plotWidth)
+  const getY = (cost: number) =>
+    chartPadding.top + plotHeight - (maxCost === 0 ? 0 : (cost / maxCost) * plotHeight)
 
   const compact = viewMode === 'condensed'
   const containerClass =
@@ -210,6 +251,215 @@ export function ComparisonResults({
             />
           ))}
         </div>
+      </div>
+
+      <div className="mt-6 rounded-[2rem] border border-slate-200 bg-slate-50/80 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
+              Break-Even Analysis
+            </p>
+            <h3 className="mt-1 text-xl font-semibold text-slate-950">
+              How plan costs change across annual medical spend
+            </h3>
+          </div>
+          <p className="text-sm text-slate-600">
+            Active scenario: <span className="font-semibold text-slate-900">{formatCurrency(activeSpend)}</span>
+            {activeSpendResult ? (
+              <>
+                {' '}
+                and <span className="font-semibold text-emerald-700">{plans[breakEvenAnalysis.planIds.indexOf(activeSpendResult.cheapestPlanId)]?.name}</span> is cheapest there.
+              </>
+            ) : null}
+          </p>
+        </div>
+
+        <div className="mt-5 overflow-x-auto">
+          <div className="min-w-[44rem]">
+            <svg
+              aria-label="Break-even analysis chart"
+              className="h-auto w-full"
+              role="img"
+              viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            >
+              <line
+                stroke="#cbd5e1"
+                strokeWidth="1"
+                x1={chartPadding.left}
+                x2={chartPadding.left}
+                y1={chartPadding.top}
+                y2={chartHeight - chartPadding.bottom}
+              />
+              <line
+                stroke="#cbd5e1"
+                strokeWidth="1"
+                x1={chartPadding.left}
+                x2={chartWidth - chartPadding.right}
+                y1={chartHeight - chartPadding.bottom}
+                y2={chartHeight - chartPadding.bottom}
+              />
+
+              {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+                const spendTick = maxSpend * ratio
+                const y = chartPadding.top + plotHeight - plotHeight * ratio
+                const spendX = getX(spendTick)
+                const costTick = maxCost * ratio
+
+                return (
+                  <g key={ratio}>
+                    <line
+                      stroke="#e2e8f0"
+                      strokeDasharray="4 6"
+                      strokeWidth="1"
+                      x1={chartPadding.left}
+                      x2={chartWidth - chartPadding.right}
+                      y1={y}
+                      y2={y}
+                    />
+                    <text
+                      fill="#64748b"
+                      fontSize="11"
+                      textAnchor="end"
+                      x={chartPadding.left - 8}
+                      y={y + 4}
+                    >
+                      {formatCompactCurrency(costTick)}
+                    </text>
+                    <text
+                      fill="#64748b"
+                      fontSize="11"
+                      textAnchor="middle"
+                      x={spendX}
+                      y={chartHeight - 12}
+                    >
+                      {formatCompactCurrency(spendTick)}
+                    </text>
+                  </g>
+                )
+              })}
+
+              {chartPoints.map((point) => {
+                const x = getX(point.spend)
+                return (
+                  <line
+                    key={`tick-${point.spend}`}
+                    stroke="#f8fafc"
+                    strokeWidth="1"
+                    x1={x}
+                    x2={x}
+                    y1={chartPadding.top}
+                    y2={chartHeight - chartPadding.bottom}
+                  />
+                )
+              })}
+
+              {plans.map((plan, index) => {
+                const planId = breakEvenAnalysis.planIds[index]
+                const color = getChartColor(index)
+                const path = chartPoints
+                  .map((point, pointIndex) => {
+                    const command = pointIndex === 0 ? 'M' : 'L'
+                    return `${command} ${getX(point.spend)} ${getY(point.costs[planId])}`
+                  })
+                  .join(' ')
+
+                return (
+                  <path
+                    key={planId}
+                    d={path}
+                    fill="none"
+                    stroke={color}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="3"
+                  />
+                )
+              })}
+
+              {breakEvenAnalysis.breakEvenPoints.map((breakEvenPoint, index) => {
+                const x = getX(breakEvenPoint.spend)
+                const y = getY(breakEvenPoint.costAtBreakEven ?? 0)
+
+                return (
+                  <g key={`${breakEvenPoint.planAId}-${breakEvenPoint.planBId}-${index}`}>
+                    <circle cx={x} cy={y} fill="#0f172a" r="4" />
+                    <text
+                      fill="#0f172a"
+                      fontSize="11"
+                      textAnchor="middle"
+                      x={x}
+                      y={Math.max(14, y - 10)}
+                    >
+                      {formatCurrency(breakEvenPoint.spend)}
+                    </text>
+                  </g>
+                )
+              })}
+
+              {activeSpendResult ? (
+                <>
+                  <line
+                    stroke="#0f172a"
+                    strokeDasharray="6 6"
+                    strokeWidth="1.5"
+                    x1={getX(activeSpendResult.spend)}
+                    x2={getX(activeSpendResult.spend)}
+                    y1={chartPadding.top}
+                    y2={chartHeight - chartPadding.bottom}
+                  />
+                  {plans.map((plan, index) => {
+                    const planId = breakEvenAnalysis.planIds[index]
+                    const color = getChartColor(index)
+                    return (
+                      <circle
+                        key={`active-${planId}`}
+                        cx={getX(activeSpendResult.spend)}
+                        cy={getY(activeSpendResult.costs[planId])}
+                        fill={color}
+                        r={activeSpendResult.cheapestPlanId === planId ? 6 : 4}
+                        stroke="#ffffff"
+                        strokeWidth="2"
+                      />
+                    )
+                  })}
+                </>
+              ) : null}
+            </svg>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-3">
+          {plans.map((plan, index) => (
+            <div
+              key={`legend-${plan.name}-${index}`}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700"
+            >
+              <span
+                aria-hidden="true"
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: getChartColor(index) }}
+              />
+              <span>{plan.name}</span>
+            </div>
+          ))}
+        </div>
+
+        {breakEvenSummaries.length > 0 ? (
+          <div className="mt-4 space-y-2">
+            {breakEvenSummaries.map((summary) => (
+              <p
+                key={`${summary.cheaperPlanId}-${summary.moreExpensivePlanId}-${summary.upToSpend}`}
+                className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+              >
+                {summary.message}
+              </p>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
+            No break-even crossover was detected in the displayed spend range.
+          </p>
+        )}
       </div>
     </section>
   )

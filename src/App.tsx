@@ -601,6 +601,8 @@ export default function App() {
         </section>
 
         <ComparisonResults
+          activeSpend={annualMedicalSpend}
+          chartMaxSpend={annualMedicalSpendSliderMax}
           coverageType={coverageType}
           plans={plans}
           results={results}

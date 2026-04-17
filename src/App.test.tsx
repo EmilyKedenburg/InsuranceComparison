@@ -50,6 +50,22 @@ describe('App integration', () => {
     expect(
       screen.getByText(/HDHP Plan is currently the cheapest plan by \$2,420\./)
     ).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Break-even analysis chart' })).toBeInTheDocument()
+    expect(
+      screen.getByText((_, element) =>
+        element?.textContent === 'Active scenario: $0 and HDHP Plan is cheapest there.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows break-even analysis inside the annual cost comparison section', () => {
+    render(<App />)
+
+    expect(screen.getByText('Break-Even Analysis')).toBeInTheDocument()
+    expect(
+      screen.getByText('How plan costs change across annual medical spend'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Break-even analysis chart' })).toBeInTheDocument()
   })
 
   it('keeps the estimated annual medical spend input synced with the slider', () => {
@@ -349,7 +365,7 @@ describe('App integration', () => {
     await user.type(spendInput, '9200')
 
     expect(screen.getByText('$8,000')).toBeInTheDocument()
-    expect(screen.getByText('$9,200')).toBeInTheDocument()
+    expect(screen.getAllByText('$9,200').length).toBeGreaterThan(0)
     expect(screen.getByText('Using your current spend override in the calculator.')).toBeInTheDocument()
   })
 
